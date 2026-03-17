@@ -4,8 +4,11 @@ export type ConversationItem =
   | UserMessageItem
   | AgentTextItem
   | ReasoningItem
+  | TaskUpdateItem
   | CommandCallItem
   | FileChangeItem
+  | PermissionRequestItem
+  | UserInputRequestItem
   | SystemItem;
 
 export interface UserMessageItem {
@@ -32,6 +35,17 @@ export interface ReasoningItem {
   timestamp: number;
 }
 
+export interface TaskUpdateItem {
+  type: "task_update";
+  id: string;
+  explanation: string;
+  steps: Array<{
+    step: string;
+    status: "pending" | "inProgress" | "completed";
+  }>;
+  timestamp: number;
+}
+
 export interface CommandCallItem {
   type: "command_call";
   id: string;
@@ -54,6 +68,36 @@ export interface FileChangeItem {
     diff: string;
   }>;
   status: "pending" | "approved" | "denied" | "running" | "completed" | "failed";
+  requestId?: number;
+  timestamp: number;
+}
+
+export interface PermissionRequestItem {
+  type: "permission_request";
+  id: string;
+  reason: string;
+  permissions: Record<string, unknown>;
+  status: "pending" | "approved" | "denied";
+  requestId?: number;
+  timestamp: number;
+}
+
+export interface UserInputRequestItem {
+  type: "user_input_request";
+  id: string;
+  questions: Array<{
+    id: string;
+    header: string;
+    question: string;
+    isOther: boolean;
+    isSecret: boolean;
+    options: Array<{
+      label: string;
+      description: string;
+    }>;
+  }>;
+  status: "pending" | "submitted" | "denied";
+  answers?: Record<string, string[]>;
   requestId?: number;
   timestamp: number;
 }

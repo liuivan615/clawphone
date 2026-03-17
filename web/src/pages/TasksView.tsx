@@ -3,16 +3,28 @@ import type { ConversationItem } from "../lib/conversation-types";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { CommandCallCard } from "../components/CommandCallCard";
 import { FileChangeCard } from "../components/FileChangeCard";
+import { PermissionRequestCard } from "../components/PermissionRequestCard";
 import { ReasoningBlock } from "../components/ReasoningBlock";
+import { TaskUpdateCard } from "../components/TaskUpdateCard";
+import { UserInputRequestCard } from "../components/UserInputRequestCard";
 
 interface Props {
   items: ConversationItem[];
   turnActive: boolean;
   onApprove?: (requestId: number) => void;
   onDeny?: (requestId: number) => void;
+  onApprovePermission?: (requestId: number, scope: "turn" | "session") => void;
+  onSubmitUserInput?: (requestId: number, answers: Record<string, string[]>) => void;
 }
 
-export function TasksView({ items, turnActive, onApprove, onDeny }: Props) {
+export function TasksView({
+  items,
+  turnActive,
+  onApprove,
+  onDeny,
+  onApprovePermission,
+  onSubmitUserInput,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,6 +76,9 @@ export function TasksView({ items, turnActive, onApprove, onDeny }: Props) {
               <ReasoningBlock key={item.id} item={item} />
             );
 
+          case "task_update":
+            return <TaskUpdateCard key={item.id} item={item} />;
+
           case "command_call":
             return (
               <CommandCallCard
@@ -83,6 +98,26 @@ export function TasksView({ items, turnActive, onApprove, onDeny }: Props) {
                 onDeny={onDeny}
               />
             );
+
+          case "permission_request":
+            return item.requestId !== undefined ? (
+              <PermissionRequestCard
+                key={item.id}
+                item={item}
+                onApprove={(requestId, scope) => onApprovePermission?.(requestId, scope)}
+                onDeny={(requestId) => onDeny?.(requestId)}
+              />
+            ) : null;
+
+          case "user_input_request":
+            return item.requestId !== undefined ? (
+              <UserInputRequestCard
+                key={item.id}
+                item={item}
+                onSubmit={(requestId, answers) => onSubmitUserInput?.(requestId, answers)}
+                onDeny={(requestId) => onDeny?.(requestId)}
+              />
+            ) : null;
 
           case "system":
             return (

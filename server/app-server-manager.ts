@@ -101,8 +101,8 @@ export interface AppServerSession {
   readline: ReadlineInterface;
   nextRequestId: number;
   pendingRequests: Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>;
-  /** Track which method each server request came from, so we respond with the correct format */
-  serverRequestMethods: Map<number, string>;
+  /** Track active server requests so we can respond with the correct payload. */
+  serverRequests: Map<number, { method: string; params: unknown }>;
   status: "starting" | "initialized" | "running" | "closed";
   createdAt: string;
 }
@@ -142,7 +142,7 @@ class AppServerManager extends EventEmitter {
       readline: rl,
       nextRequestId: 1,
       pendingRequests: new Map(),
-      serverRequestMethods: new Map(),
+      serverRequests: new Map(),
       status: "starting",
       createdAt: new Date().toISOString(),
     };
@@ -248,17 +248,31 @@ class AppServerManager extends EventEmitter {
     opts: {
       model?: string;
       effort?: ReasoningEffort;
+      collaborationMode?: "plan" | "default";
     } = {}
   ): Promise<unknown> {
     const session = this.sessions.get(sessionId);
     if (!session || !session.threadId) throw new Error(`Session ${sessionId} not ready`);
 
-    return this.sendRequest(session, "turn/start", {
+    const params: Record<string, unknown> = {
       threadId: session.threadId,
       input: [{ type: "text", text, text_elements: [] }],
       model: opts.model || undefined,
       effort: opts.effort || undefined,
-    });
+    };
+
+    if (opts.collaborationMode) {
+      params.collaborationMode = {
+        mode: opts.collaborationMode,
+        settings: {
+          model: opts.model || "gpt-5.4",
+          reasoning_effort: opts.effort || null,
+          developer_instructions: null,
+        },
+      };
+    }
+
+    return this.sendRequest(session, "turn/start", params);
   }
 
   /**
@@ -274,8 +288,9 @@ class AppServerManager extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    const method = session.serverRequestMethods.get(requestId);
-    session.serverRequestMethods.delete(requestId);
+    const request = session.serverRequests.get(requestId);
+    const method = request?.method;
+    session.serverRequests.delete(requestId);
 
     let result: unknown;
 
@@ -300,6 +315,71 @@ class AppServerManager extends EventEmitter {
     }
 
     const response = JSON.stringify({ id: requestId, result });
+    session.process.stdin?.write(response + "\n");
+  }
+
+  /**
+   * Respond to a permissions request by granting the requested profile.
+   */
+  respondToPermissions(
+    sessionId: string,
+    requestId: number,
+    scope: "turn" | "session"
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    const request = session.serverRequests.get(requestId);
+    session.serverRequests.delete(requestId);
+
+    const permissions =
+      (request?.params as { permissions?: unknown } | undefined)?.permissions ?? {};
+    const response = JSON.stringify({
+      id: requestId,
+      result: { permissions, scope },
+    });
+    session.process.stdin?.write(response + "\n");
+  }
+
+  /**
+   * Respond to a request_user_input prompt.
+   */
+  respondToUserInput(
+    sessionId: string,
+    requestId: number,
+    answers: Record<string, string[]>
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    session.serverRequests.delete(requestId);
+
+    const formattedAnswers = Object.fromEntries(
+      Object.entries(answers).map(([id, values]) => [id, { answers: values }])
+    );
+    const response = JSON.stringify({
+      id: requestId,
+      result: { answers: formattedAnswers },
+    });
+    session.process.stdin?.write(response + "\n");
+  }
+
+  /**
+   * Reject a server-initiated request via JSON-RPC error response.
+   */
+  rejectServerRequest(sessionId: string, requestId: number, message: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    session.serverRequests.delete(requestId);
+
+    const response = JSON.stringify({
+      id: requestId,
+      error: {
+        code: -32000,
+        message,
+      },
+    });
     session.process.stdin?.write(response + "\n");
   }
 
@@ -435,8 +515,11 @@ class AppServerManager extends EventEmitter {
       }
 
       case "server_request": {
-        // Track the method so we can respond with the correct format
-        session.serverRequestMethods.set(incoming.msg.id, incoming.msg.method);
+        // Track the request so we can respond with the correct format
+        session.serverRequests.set(incoming.msg.id, {
+          method: incoming.msg.method,
+          params: incoming.msg.params,
+        });
         // Server is requesting something from us (e.g., approval)
         this.emit("server_request", session.id, incoming.msg.method, incoming.msg.id, incoming.msg.params);
         break;

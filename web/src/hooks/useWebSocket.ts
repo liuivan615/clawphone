@@ -85,12 +85,13 @@ export function useWebSocket() {
   );
 
   const sendMessage = useCallback(
-    (text: string, opts?: { model?: string; reasoningEffort?: string }) => {
+    (text: string, opts?: { model?: string; reasoningEffort?: string; collaborationMode?: string }) => {
       return send({
         type: "send_message",
         text,
         model: opts?.model,
         reasoningEffort: opts?.reasoningEffort,
+        collaborationMode: opts?.collaborationMode,
       });
     },
     [send]
@@ -110,6 +111,27 @@ export function useWebSocket() {
   const deny = useCallback(
     (requestId: number) => {
       return send({ type: "deny", requestId });
+    },
+    [send]
+  );
+
+  const grantPermissions = useCallback(
+    (requestId: number, scope: "turn" | "session") => {
+      return send({ type: "grant_permissions", requestId, scope });
+    },
+    [send]
+  );
+
+  const submitUserInput = useCallback(
+    (requestId: number, answers: Record<string, string[]>) => {
+      return send({ type: "submit_user_input", requestId, answers });
+    },
+    [send]
+  );
+
+  const rejectRequest = useCallback(
+    (requestId: number, message?: string) => {
+      return send({ type: "reject_request", requestId, message });
     },
     [send]
   );
@@ -154,6 +176,9 @@ export function useWebSocket() {
     sendMessage,
     approve,
     deny,
+    grantPermissions,
+    submitUserInput,
+    rejectRequest,
     interrupt,
     killSession,
     listThreads,

@@ -11,14 +11,18 @@ import { StatusBar } from "./components/StatusBar";
 import { LeftDrawer } from "./components/LeftDrawer";
 import { RightDrawer } from "./components/RightDrawer";
 import { TasksView } from "./pages/TasksView";
+import { ChangesView } from "./pages/ChangesView";
+import { FilesView } from "./pages/FilesView";
 import { StartScreen } from "./pages/StartScreen";
 
 type Tab = "tasks" | "files" | "changes";
 
 // Theme management
-function getInitialTheme(): "dark" | "light" {
+const VALID_THEMES = ["dark", "light", "one-dark", "dracula", "github-dark"];
+
+function getInitialTheme(): string {
   const saved = localStorage.getItem("clawphone_theme");
-  if (saved === "light" || saved === "dark") return saved;
+  if (saved && VALID_THEMES.includes(saved)) return saved;
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
@@ -35,8 +39,22 @@ function formatTimeAgo(unixSeconds: number): string {
 
 function AuthenticatedApp() {
   const [tab, setTab] = useState<Tab>("tasks");
-  const [theme, setTheme] = useState<"dark" | "light">(getInitialTheme);
-  const { connected, addHandler, startSession, sendMessage, approve, deny, killSession, listThreads, resumeThread } = useWebSocket();
+  const [theme, setTheme] = useState(getInitialTheme);
+  const {
+    connected,
+    addHandler,
+    startSession,
+    sendMessage,
+    approve,
+    deny,
+    grantPermissions,
+    submitUserInput,
+    rejectRequest,
+    interrupt,
+    killSession,
+    listThreads,
+    resumeThread,
+  } = useWebSocket();
 
   // Session state
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -62,6 +80,7 @@ function AuthenticatedApp() {
   const [model, setModel] = useState("gpt-5.4");
   const [reasoning, setReasoning] = useState("xhigh");
   const [approvalPolicy, setApprovalPolicy] = useState("on-request");
+  const [planMode, setPlanMode] = useState(false);
 
   // Theme
   useEffect(() => {
@@ -69,8 +88,8 @@ function AuthenticatedApp() {
     localStorage.setItem("clawphone_theme", theme);
   }, [theme]);
 
-  const toggleTheme = useCallback(() => {
-    setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const changeTheme = useCallback((t: string) => {
+    setTheme(t as typeof theme);
   }, []);
 
   // ── Helper: find or create item by id ──
@@ -104,6 +123,14 @@ function AuthenticatedApp() {
       }
       case "agentMessage":
         return { type: "agent_text", id, content: (item.text as string) || "", streaming: false, timestamp: ts };
+      case "plan":
+        return {
+          type: "task_update",
+          id,
+          explanation: (item.text as string) || "",
+          steps: [],
+          timestamp: ts,
+        };
       case "reasoning": {
         const summary = ((item.summary as string[]) || []).join("");
         const content = ((item.content as string[]) || []).join("");
@@ -114,7 +141,14 @@ function AuthenticatedApp() {
           type: "command_call", id,
           command: (item.command as string) || "",
           cwd: item.cwd as string,
-          status: (item.status as string) === "completed" ? "completed" : (item.status as string) === "failed" ? "failed" : (item.status as string) === "declined" ? "denied" : "completed",
+          status:
+            (item.status as string) === "completed"
+              ? "completed"
+              : (item.status as string) === "failed"
+              ? "failed"
+              : (item.status as string) === "declined"
+              ? "denied"
+              : "running",
           output: (item.aggregatedOutput as string) || "",
           exitCode: (item.exitCode as number) ?? null,
           durationMs: (item.durationMs as number) ?? null,
@@ -128,7 +162,14 @@ function AuthenticatedApp() {
         }));
         return {
           type: "file_change", id, changes,
-          status: (item.status as string) === "completed" ? "completed" : (item.status as string) === "failed" ? "failed" : "completed",
+          status:
+            (item.status as string) === "completed"
+              ? "completed"
+              : (item.status as string) === "failed"
+              ? "failed"
+              : (item.status as string) === "declined"
+              ? "denied"
+              : "running",
           timestamp: ts,
         };
       }
@@ -145,8 +186,20 @@ function AuthenticatedApp() {
           setActiveSessionId(msg.sessionId as string);
           setThreadId(msg.threadId as string);
           setWorkspace((msg.workspace as string) || "");
-          setItems([]);
-          setTurnActive(!!msg.prompt);
+          setSavedThreads((prev) =>
+            prev.some((thread) => thread.id === (msg.threadId as string))
+              ? prev
+              : [
+                  {
+                    id: msg.threadId as string,
+                    preview: "",
+                    name: null,
+                    cwd: (msg.workspace as string) || "",
+                    updatedAt: Math.floor(Date.now() / 1000),
+                  },
+                  ...prev,
+                ]
+          );
           setLastError(null);
           break;
 
@@ -169,6 +222,7 @@ function AuthenticatedApp() {
           const thread = msg.thread as Record<string, unknown>;
           if (!thread) break;
           setThreadId(thread.id as string);
+          setWorkspace((thread.cwd as string) || "");
           // Convert thread turns/items into ConversationItems
           const turns = (thread.turns as Array<Record<string, unknown>>) || [];
           const restored: ConversationItem[] = [];
@@ -181,6 +235,41 @@ function AuthenticatedApp() {
           }
           setItems(restored);
           setTurnActive(false);
+          break;
+        }
+
+        case "task_update": {
+          const turnId = msg.turnId as string;
+          const explanation = (msg.explanation as string) || "";
+          const plan = (msg.plan as Array<Record<string, unknown>>) || [];
+          updateItem(`task-${turnId}`, () => ({
+            type: "task_update",
+            id: `task-${turnId}`,
+            explanation,
+            steps: plan.map((step) => ({
+              step: (step.step as string) || "",
+              status: ((step.status as string) || "pending") as "pending" | "inProgress" | "completed",
+            })),
+            timestamp: Date.now(),
+          }));
+          break;
+        }
+
+        case "plan_delta": {
+          const itemId = msg.itemId as string;
+          const delta = msg.delta as string;
+          updateItem(itemId, (prev) => {
+            if (prev && prev.type === "task_update") {
+              return { ...prev, explanation: prev.explanation + delta };
+            }
+            return {
+              type: "task_update",
+              id: itemId,
+              explanation: delta,
+              steps: [],
+              timestamp: Date.now(),
+            };
+          });
           break;
         }
 
@@ -304,6 +393,47 @@ function AuthenticatedApp() {
               timestamp: Date.now(),
             };
           });
+          break;
+        }
+
+        case "permission_request": {
+          const itemId = msg.itemId as string;
+          const requestId = msg.requestId as number;
+          updateItem(itemId, () => ({
+            type: "permission_request",
+            id: itemId,
+            reason: (msg.reason as string) || "",
+            permissions: (msg.permissions as Record<string, unknown>) || {},
+            status: "pending",
+            requestId,
+            timestamp: Date.now(),
+          }));
+          break;
+        }
+
+        case "user_input_request": {
+          const itemId = msg.itemId as string;
+          const requestId = msg.requestId as number;
+          const questions = ((msg.questions as Array<Record<string, unknown>>) || []).map((question) => ({
+            id: (question.id as string) || "",
+            header: (question.header as string) || "",
+            question: (question.question as string) || "",
+            isOther: Boolean(question.isOther),
+            isSecret: Boolean(question.isSecret),
+            options: ((question.options as Array<Record<string, unknown>>) || []).map((option) => ({
+              label: (option.label as string) || "",
+              description: (option.description as string) || "",
+            })),
+          }));
+
+          updateItem(itemId, () => ({
+            type: "user_input_request",
+            id: itemId,
+            questions,
+            status: "pending",
+            requestId,
+            timestamp: Date.now(),
+          }));
           break;
         }
 
@@ -475,14 +605,28 @@ function AuthenticatedApp() {
             },
           ]);
           break;
+
+        case "server_request":
+          setItems((prev) => [
+            ...prev,
+            {
+              type: "system",
+              id: `srv-${Date.now()}`,
+              content: `Unhandled request: ${String(msg.method || "unknown")}`,
+              timestamp: Date.now(),
+            },
+          ]);
+          break;
       }
     });
   }, [addHandler, updateItem]);
 
   // ── Handle sending a message ──
   const handleSend = useCallback(
-    (text: string) => {
+    (text: string, isPlanMode?: boolean) => {
       if (!activeSessionId) return;
+
+      const usePlan = isPlanMode ?? planMode;
 
       // Add user message to items
       setItems((prev) => [
@@ -490,15 +634,19 @@ function AuthenticatedApp() {
         {
           type: "user_message",
           id: `user-${Date.now()}`,
-          text,
+          text: usePlan ? `[计划] ${text}` : text,
           timestamp: Date.now(),
         },
       ]);
 
-      sendMessage(text, { model, reasoningEffort: reasoning });
+      sendMessage(text, {
+        model,
+        reasoningEffort: reasoning,
+        collaborationMode: usePlan ? "plan" : undefined,
+      });
       setTurnActive(true);
     },
-    [activeSessionId, sendMessage, model, reasoning]
+    [activeSessionId, sendMessage, model, reasoning, planMode]
   );
 
   // ── Handle starting a session ──
@@ -506,6 +654,7 @@ function AuthenticatedApp() {
     (ws: string, prompt?: string) => {
       setItems([]);
       setLastError(null);
+      setTurnActive(Boolean(prompt));
 
       // If prompt provided, add it as user message immediately
       if (prompt) {
@@ -547,9 +696,27 @@ function AuthenticatedApp() {
 
   const handleDeny = useCallback(
     (requestId: number) => {
-      // Instantly update matching item to "denied"
+      let shouldRejectGenericRequest = false;
+
+      // Instantly update matching item to a terminal local state
       setItems((prev) =>
         prev.map((item) => {
+          if (
+            item.type === "permission_request" &&
+            item.requestId === requestId &&
+            item.status === "pending"
+          ) {
+            shouldRejectGenericRequest = true;
+            return { ...item, status: "denied", requestId: undefined };
+          }
+          if (
+            item.type === "user_input_request" &&
+            item.requestId === requestId &&
+            item.status === "pending"
+          ) {
+            shouldRejectGenericRequest = true;
+            return { ...item, status: "denied", requestId: undefined };
+          }
           if (
             (item.type === "command_call" || item.type === "file_change") &&
             item.requestId === requestId &&
@@ -560,9 +727,51 @@ function AuthenticatedApp() {
           return item;
         })
       );
-      deny(requestId);
+      if (shouldRejectGenericRequest) {
+        rejectRequest(requestId);
+      } else {
+        deny(requestId);
+      }
     },
-    [deny]
+    [deny, rejectRequest]
+  );
+
+  const handleApprovePermission = useCallback(
+    (requestId: number, scope: "turn" | "session") => {
+      setItems((prev) =>
+        prev.map((item) => {
+          if (
+            item.type === "permission_request" &&
+            item.requestId === requestId &&
+            item.status === "pending"
+          ) {
+            return { ...item, status: "approved", requestId: undefined };
+          }
+          return item;
+        })
+      );
+      grantPermissions(requestId, scope);
+    },
+    [grantPermissions]
+  );
+
+  const handleSubmitUserInput = useCallback(
+    (requestId: number, answers: Record<string, string[]>) => {
+      setItems((prev) =>
+        prev.map((item) => {
+          if (
+            item.type === "user_input_request" &&
+            item.requestId === requestId &&
+            item.status === "pending"
+          ) {
+            return { ...item, status: "submitted", answers, requestId: undefined };
+          }
+          return item;
+        })
+      );
+      submitUserInput(requestId, answers);
+    },
+    [submitUserInput]
   );
 
   // ── Handle resuming a saved thread ──
@@ -605,17 +814,19 @@ function AuthenticatedApp() {
       leftDrawer={
         <LeftDrawer
           threads={threads}
-          activeThreadId={activeSessionId || undefined}
+          activeThreadId={threadId || undefined}
           onSelectThread={(id) => handleResumeThread(id)}
           onNewThread={() => {
             killSession();
             setActiveSessionId(null);
+            setThreadId(null);
+            setItems([]);
           }}
-          onToggleTheme={toggleTheme}
-          isDark={theme === "dark"}
+          onThemeChange={changeTheme}
+          theme={theme}
         />
       }
-      rightDrawer={<RightDrawer files={[]} />}
+      rightDrawer={<RightDrawer workspace={workspace} />}
     >
       <TopBar title={workspace.split("\\").pop() || "Codex"} hasChanges={false} />
       <TabBar active={tab} onChange={setTab} />
@@ -629,26 +840,32 @@ function AuthenticatedApp() {
               turnActive={turnActive}
               onApprove={handleApprove}
               onDeny={handleDeny}
+              onApprovePermission={handleApprovePermission}
+              onSubmitUserInput={handleSubmitUserInput}
             />
           </div>
         )}
         {tab === "files" && (
-          <div className="tab-enter flex-1 flex items-center justify-center" style={{ color: "var(--text-tertiary)" }}>
-            <p className="text-sm">文件浏览器 — 开发中</p>
+          <div className="tab-enter flex-1 flex flex-col overflow-hidden">
+            <FilesView workspace={workspace} />
           </div>
         )}
         {tab === "changes" && (
-          <div className="tab-enter flex-1 flex items-center justify-center" style={{ color: "var(--text-tertiary)" }}>
-            <p className="text-sm">Git 变更 — 开发中</p>
+          <div className="tab-enter flex-1 flex flex-col overflow-hidden">
+            <ChangesView workspace={workspace} />
           </div>
         )}
       </div>
 
       <InputArea
         onSend={handleSend}
-        disabled={!connected || !activeSessionId || turnActive}
+        disabled={!connected || !activeSessionId}
+        turnActive={turnActive}
+        onInterrupt={interrupt}
         model={model}
         reasoning={reasoning}
+        planMode={planMode}
+        onPlanModeChange={setPlanMode}
         onModelChange={setModel}
         onReasoningChange={setReasoning}
       />

@@ -1,9 +1,15 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { api } from "../lib/api";
 
 const PERMISSION_OPTIONS = [
   { value: "on-request", label: "默认权限", icon: "shield", color: "var(--text-secondary)" },
   { value: "never", label: "完全访问权限", icon: "shield-warn", color: "var(--accent-amber)" },
 ];
+
+interface BranchInfo {
+  name: string;
+  current: boolean;
+}
 
 interface Props {
   permission?: string;
@@ -122,16 +128,8 @@ export function StatusBar({
           )}
         </div>
 
-        {/* Branch */}
-        <span className="flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2">
-            <circle cx="3" cy="2.5" r="1.2" />
-            <circle cx="3" cy="7.5" r="1.2" />
-            <circle cx="7" cy="5" r="1.2" />
-            <path d="M3 3.7V6.3M4.2 7.1 5.8 5.6" />
-          </svg>
-          {branch}
-        </span>
+        {/* Branch selector */}
+        <BranchSelector branch={branch || "master"} workspace={workspace} />
       </div>
 
       {/* Workspace path */}
@@ -142,6 +140,186 @@ export function StatusBar({
         >
           {workspace}
         </span>
+      )}
+    </div>
+  );
+}
+
+function BranchSelector({ branch, workspace }: { branch: string; workspace?: string }) {
+  const [open, setOpen] = useState(false);
+  const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [currentBranch, setCurrentBranch] = useState(branch);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setCurrentBranch(branch); }, [branch]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const loadBranches = useCallback(async () => {
+    if (!workspace) return;
+    try {
+      const res = await fetch(`/api/git/branches?cwd=${encodeURIComponent(workspace)}`, {
+        headers: { Authorization: `Bearer ${api.token}` },
+      });
+      const data = await res.json();
+      if (data.error) {
+        setBranchError(data.error);
+        return;
+      }
+
+      setBranches(data.branches || []);
+      const cur = (data.branches || []).find((b: BranchInfo) => b.current);
+      if (cur) setCurrentBranch(cur.name);
+      setBranchError(null);
+    } catch (err) {
+      setBranchError(err instanceof Error ? err.message : String(err));
+    }
+  }, [workspace]);
+
+  useEffect(() => {
+    void loadBranches();
+  }, [loadBranches]);
+
+  const switchBranch = async (name: string) => {
+    if (!workspace) return;
+    try {
+      const res = await fetch("/api/git/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${api.token}` },
+        body: JSON.stringify({ cwd: workspace, branch: name }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setCurrentBranch(data.branch || name);
+      setBranchError(null);
+      await loadBranches();
+      setOpen(false);
+    } catch (err) {
+      setBranchError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const createBranch = async () => {
+    if (!workspace || !newBranchName.trim()) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/git/branch/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${api.token}` },
+        body: JSON.stringify({ cwd: workspace, name: newBranchName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setCurrentBranch(data.branch || newBranchName.trim());
+      setNewBranchName("");
+      setBranchError(null);
+      await loadBranches();
+      setOpen(false);
+    } catch (err) {
+      setBranchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => {
+          setOpen((v) => !v);
+          if (!open) {
+            setBranchError(null);
+            void loadBranches();
+          }
+        }}
+        className="flex items-center gap-1 btn-press"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2">
+          <circle cx="3" cy="2.5" r="1.2" /><circle cx="3" cy="7.5" r="1.2" /><circle cx="7" cy="5" r="1.2" />
+          <path d="M3 3.7V6.3M4.2 7.1 5.8 5.6" />
+        </svg>
+        {currentBranch}
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
+        >
+          <path d="M1.5 3l2.5 2.5L6.5 3" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="absolute bottom-full left-0 mb-1.5 min-w-[180px] py-1 rounded-xl overflow-hidden z-50"
+          style={{
+            background: "var(--bg-secondary)",
+            border: "1px solid var(--border-default)",
+            boxShadow: "var(--shadow-lg)",
+            animation: "dropdownIn 0.18s var(--ease-spring) both",
+            maxHeight: "250px",
+            overflowY: "auto",
+          }}
+        >
+          {branches.filter((b) => !b.name.startsWith("remotes/")).map((b) => (
+            <button
+              key={b.name}
+              onClick={() => switchBranch(b.name)}
+              className="w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2"
+              style={{
+                color: b.name === currentBranch ? "var(--accent-cyan)" : "var(--text-primary)",
+                background: b.name === currentBranch ? "var(--accent-cyan-dim)" : "transparent",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {b.name}
+              {b.name === currentBranch && (
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--accent-cyan)" strokeWidth="2" strokeLinecap="round" className="ml-auto">
+                  <path d="M1 4l2 2 3.5-3.5" />
+                </svg>
+              )}
+            </button>
+          ))}
+
+          {/* Create new branch */}
+          <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="flex gap-1">
+              <input
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+                placeholder="新分支名..."
+                className="flex-1 px-2 py-1 rounded text-[10px] outline-none"
+                style={{ background: "var(--bg-primary)", color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
+                onKeyDown={(e) => { if (e.key === "Enter") createBranch(); }}
+              />
+              <button
+                onClick={createBranch}
+                disabled={creating || !newBranchName.trim()}
+                className="px-2 py-1 rounded text-[10px] font-medium btn-press disabled:opacity-30"
+                style={{ background: "var(--accent-cyan)", color: "var(--text-inverse)" }}
+              >
+                +
+              </button>
+            </div>
+            {branchError && (
+              <div className="mt-2 text-[10px] leading-relaxed" style={{ color: "var(--accent-red)" }}>
+                {branchError}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

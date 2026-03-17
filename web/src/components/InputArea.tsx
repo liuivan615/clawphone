@@ -2,10 +2,14 @@ import { useState, useRef, useCallback } from "react";
 import { Dropdown } from "./Dropdown";
 
 interface Props {
-  onSend: (message: string) => void;
+  onSend: (message: string, planMode?: boolean) => void;
   disabled?: boolean;
+  turnActive?: boolean;
+  onInterrupt?: () => void;
   model?: string;
   reasoning?: string;
+  planMode?: boolean;
+  onPlanModeChange?: (enabled: boolean) => void;
   onModelChange?: (model: string) => void;
   onReasoningChange?: (level: string) => void;
 }
@@ -29,8 +33,12 @@ const REASONING_OPTIONS = [
 export function InputArea({
   onSend,
   disabled,
+  turnActive,
+  onInterrupt,
   model = "gpt-5.4",
   reasoning = "xhigh",
+  planMode = false,
+  onPlanModeChange,
   onModelChange,
   onReasoningChange,
 }: Props) {
@@ -42,12 +50,12 @@ export function InputArea({
   const handleSubmit = useCallback(() => {
     const msg = text.trim();
     if (!msg || disabled) return;
-    onSend(msg);
+    onSend(msg, planMode);
     setText("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, disabled, onSend]);
+  }, [text, disabled, onSend, planMode]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -95,6 +103,25 @@ export function InputArea({
           }}
           variant="accent"
         />
+
+        {/* Plan mode toggle */}
+        <button
+          onClick={() => onPlanModeChange?.(!planMode)}
+          className="h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1.5 btn-press"
+          style={{
+            background: planMode ? "var(--accent-cyan)" : "var(--bg-tertiary)",
+            color: planMode ? "var(--text-inverse)" : "var(--text-tertiary)",
+            transition: "all var(--dur-fast) ease",
+          }}
+          title="计划模式 (Shift+Tab 切换)"
+        >
+          {planMode && (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+              <circle cx="5" cy="5" r="4" />
+            </svg>
+          )}
+          计划
+        </button>
       </div>
 
       {/* Input row */}
@@ -125,19 +152,35 @@ export function InputArea({
             e.currentTarget.style.boxShadow = "none";
           }}
         />
-        <button
-          onClick={handleSubmit}
-          disabled={disabled || !text.trim()}
-          className="shrink-0 w-10 h-10 flex items-center justify-center rounded-xl disabled:opacity-30 btn-glow btn-press"
-          style={{
-            background: text.trim() ? "var(--accent-cyan)" : "var(--bg-tertiary)",
-            color: text.trim() ? "var(--text-inverse)" : "var(--text-tertiary)",
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
-            <path d="M3.5 14.5l11-5.5-11-5.5v4.5l7 1-7 1z" />
-          </svg>
-        </button>
+        {turnActive ? (
+          <button
+            onClick={onInterrupt}
+            className="shrink-0 w-10 h-10 flex items-center justify-center rounded-xl btn-press"
+            style={{
+              background: "var(--accent-red)",
+              color: "var(--text-inverse)",
+            }}
+            title="停止"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="2" y="2" width="10" height="10" rx="2" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={disabled || !text.trim()}
+            className="shrink-0 w-10 h-10 flex items-center justify-center rounded-xl disabled:opacity-30 btn-glow btn-press"
+            style={{
+              background: text.trim() ? "var(--accent-cyan)" : "var(--bg-tertiary)",
+              color: text.trim() ? "var(--text-inverse)" : "var(--text-tertiary)",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+              <path d="M3.5 14.5l11-5.5-11-5.5v4.5l7 1-7 1z" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -133,6 +133,15 @@ export default async function wsHandler(app: FastifyInstance) {
           break;
 
         // ── Plan ──
+        case "turn/plan/updated":
+          broadcastToSession(sessionId, {
+            type: "task_update",
+            turnId: p.turnId,
+            explanation: p.explanation,
+            plan: p.plan,
+          });
+          break;
+
         case "item/plan/delta":
           broadcastToSession(sessionId, {
             type: "plan_delta",
@@ -193,6 +202,25 @@ export default async function wsHandler(app: FastifyInstance) {
             requestId,
             itemId: p.itemId,
             reason: p.reason,
+          });
+          break;
+
+        case "item/permissions/requestApproval":
+          broadcastToSession(sessionId, {
+            type: "permission_request",
+            requestId,
+            itemId: p.itemId,
+            reason: p.reason,
+            permissions: p.permissions,
+          });
+          break;
+
+        case "item/tool/requestUserInput":
+          broadcastToSession(sessionId, {
+            type: "user_input_request",
+            requestId,
+            itemId: p.itemId,
+            questions: p.questions,
           });
           break;
 
@@ -360,9 +388,11 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
       try {
         const model = msg.model as string | undefined;
         const effort = msg.reasoningEffort as string | undefined;
+        const collab = msg.collaborationMode as string | undefined;
         await appServerManager.sendTurn(sessionId, text, {
           model,
           effort: effort as "low" | "medium" | "high" | "xhigh" | undefined,
+          collaborationMode: collab as "plan" | "default" | undefined,
         });
       } catch (err) {
         send(ws, {
@@ -399,6 +429,51 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
       }
 
       appServerManager.respondToApproval(sessionId, requestId, "denied");
+      break;
+    }
+
+    case "grant_permissions": {
+      const state = clients.get(ws);
+      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const requestId = msg.requestId as number;
+      const scope = (msg.scope as "turn" | "session") || "turn";
+
+      if (!sessionId || requestId === undefined) {
+        send(ws, { type: "error", message: "sessionId and requestId are required" });
+        return;
+      }
+
+      appServerManager.respondToPermissions(sessionId, requestId, scope);
+      break;
+    }
+
+    case "submit_user_input": {
+      const state = clients.get(ws);
+      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const requestId = msg.requestId as number;
+      const answers = (msg.answers as Record<string, string[]>) || {};
+
+      if (!sessionId || requestId === undefined) {
+        send(ws, { type: "error", message: "sessionId and requestId are required" });
+        return;
+      }
+
+      appServerManager.respondToUserInput(sessionId, requestId, answers);
+      break;
+    }
+
+    case "reject_request": {
+      const state = clients.get(ws);
+      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const requestId = msg.requestId as number;
+      const message = (msg.message as string) || "Request denied by user";
+
+      if (!sessionId || requestId === undefined) {
+        send(ws, { type: "error", message: "sessionId and requestId are required" });
+        return;
+      }
+
+      appServerManager.rejectServerRequest(sessionId, requestId, message);
       break;
     }
 

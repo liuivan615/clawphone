@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { readdirSync, statSync, existsSync } from "fs";
+import { readdirSync, readFileSync, statSync, existsSync } from "fs";
 import { join } from "path";
 
 export default async function browseRoutes(app: FastifyInstance) {
@@ -77,5 +77,52 @@ export default async function browseRoutes(app: FastifyInstance) {
       }
     }
     return { drives };
+  });
+
+  /**
+   * List files (non-directories) in a path.
+   */
+  app.get<{
+    Querystring: { path?: string };
+  }>("/api/files", async (request) => {
+    const targetPath = request.query.path || "D:\\";
+    if (!existsSync(targetPath)) return { files: [] };
+
+    try {
+      const entries = readdirSync(targetPath, { withFileTypes: true });
+      const files = entries
+        .filter((e) => {
+          if (!e.isFile()) return false;
+          return true;
+        })
+        .map((e) => e.name)
+        .sort((a, b) => a.localeCompare(b));
+      return { files };
+    } catch {
+      return { files: [] };
+    }
+  });
+
+  /**
+   * Read a file's content (text only, max 500KB).
+   */
+  app.get<{
+    Querystring: { path: string };
+  }>("/api/file", async (request, reply) => {
+    const filePath = request.query.path;
+    if (!filePath || !existsSync(filePath)) {
+      return reply.code(404).send({ error: "File not found" });
+    }
+
+    try {
+      const stat = statSync(filePath);
+      if (stat.size > 512 * 1024) {
+        return { content: "（文件太大，超过 500KB）", size: stat.size };
+      }
+      const content = readFileSync(filePath, "utf-8");
+      return { content, size: stat.size };
+    } catch (err) {
+      return { content: `（无法读取: ${err instanceof Error ? err.message : err}）` };
+    }
   });
 }
