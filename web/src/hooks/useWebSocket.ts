@@ -1,13 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { api } from "../lib/api";
 
-export interface CodexSessionInfo {
-  id: string;
-  workspace: string;
-  status: string;
-  createdAt: string;
-}
-
 interface WsMessage {
   type: string;
   [key: string]: unknown;
@@ -53,7 +46,6 @@ export function useWebSocket() {
       wsRef.current = null;
       setConnected(false);
       if (e.code === 4001) {
-        // Auth failure — clear token and force re-login
         import("../lib/api").then(({ clearToken }) => {
           clearToken();
           window.location.reload();
@@ -76,30 +68,70 @@ export function useWebSocket() {
     return false;
   }, []);
 
-  const startCodex = useCallback(
-    (workspace: string, prompt?: string) => {
-      return send({ type: "start_codex", workspace, prompt });
+  // ── New API methods ──
+
+  const startSession = useCallback(
+    (workspace: string, opts?: { model?: string; reasoningEffort?: string; prompt?: string; approvalPolicy?: string }) => {
+      return send({
+        type: "start_session",
+        workspace,
+        model: opts?.model,
+        reasoningEffort: opts?.reasoningEffort,
+        prompt: opts?.prompt,
+        approvalPolicy: opts?.approvalPolicy,
+      });
     },
     [send]
   );
 
-  const sendInput = useCallback(
-    (input: string, sessionId?: string) => {
-      return send({ type: "codex_input", input, sessionId });
+  const sendMessage = useCallback(
+    (text: string, opts?: { model?: string; reasoningEffort?: string }) => {
+      return send({
+        type: "send_message",
+        text,
+        model: opts?.model,
+        reasoningEffort: opts?.reasoningEffort,
+      });
     },
     [send]
   );
 
-  const sendKey = useCallback(
-    (key: string, sessionId?: string) => {
-      return send({ type: "codex_key", key, sessionId });
+  const approve = useCallback(
+    (requestId: number, decision?: string) => {
+      return send({
+        type: "approve",
+        requestId,
+        decision: decision || "approved",
+      });
     },
     [send]
   );
 
-  const killCodex = useCallback(
+  const deny = useCallback(
+    (requestId: number) => {
+      return send({ type: "deny", requestId });
+    },
+    [send]
+  );
+
+  const interrupt = useCallback(() => {
+    return send({ type: "interrupt" });
+  }, [send]);
+
+  const killSession = useCallback(
     (sessionId?: string) => {
-      return send({ type: "kill_codex", sessionId });
+      return send({ type: "kill_session", sessionId });
+    },
+    [send]
+  );
+
+  const listThreads = useCallback(() => {
+    return send({ type: "list_threads" });
+  }, [send]);
+
+  const resumeThread = useCallback(
+    (threadId: string) => {
+      return send({ type: "resume_thread", threadId });
     },
     [send]
   );
@@ -118,9 +150,13 @@ export function useWebSocket() {
     connected,
     send,
     addHandler,
-    startCodex,
-    sendInput,
-    sendKey,
-    killCodex,
+    startSession,
+    sendMessage,
+    approve,
+    deny,
+    interrupt,
+    killSession,
+    listThreads,
+    resumeThread,
   };
 }

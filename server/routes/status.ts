@@ -5,7 +5,7 @@ import {
   checkTailscale,
   checkBridge,
 } from "../gateway-client.js";
-import { codexManager } from "../codex-manager.js";
+import { appServerManager } from "../app-server-manager.js";
 import type { StatusPayload } from "../../shared/types.js";
 
 export default async function statusRoutes(app: FastifyInstance) {
@@ -17,9 +17,9 @@ export default async function statusRoutes(app: FastifyInstance) {
       checkBridge(),
     ]);
 
-    const sessions = codexManager.getAll();
+    const sessions = appServerManager.getAll();
     const activeSessions = sessions.filter(
-      (s) => s.status === "running"
+      (s) => s.status === "running" || s.status === "initialized"
     ).length;
 
     const payload: StatusPayload = {

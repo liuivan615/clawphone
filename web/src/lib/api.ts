@@ -44,6 +44,9 @@ async function apiFetch<T>(
 }
 
 export const api = {
+  get token() {
+    return getToken();
+  },
   getStatus: () => apiFetch<import("./types").StatusPayload>("/api/status"),
 
   getSessions: () =>

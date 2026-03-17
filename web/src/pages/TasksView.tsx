@@ -1,27 +1,26 @@
 import { useRef, useEffect } from "react";
+import type { ConversationItem } from "../lib/conversation-types";
 import { MarkdownMessage } from "../components/MarkdownMessage";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-}
+import { CommandCallCard } from "../components/CommandCallCard";
+import { FileChangeCard } from "../components/FileChangeCard";
+import { ReasoningBlock } from "../components/ReasoningBlock";
 
 interface Props {
-  messages: Message[];
-  streamingContent: string;
-  isStreaming: boolean;
+  items: ConversationItem[];
+  turnActive: boolean;
+  onApprove?: (requestId: number) => void;
+  onDeny?: (requestId: number) => void;
 }
 
-export function TasksView({ messages, streamingContent, isStreaming }: Props) {
+export function TasksView({ items, turnActive, onApprove, onDeny }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, streamingContent]);
+  }, [items, turnActive]);
 
-  if (messages.length === 0 && !isStreaming) {
+  if (items.length === 0 && !turnActive) {
     return (
       <div className="flex flex-col items-center justify-center h-full px-6">
         <div
@@ -39,11 +38,72 @@ export function TasksView({ messages, streamingContent, isStreaming }: Props) {
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto py-3">
-      {messages.map((msg) => (
-        <MarkdownMessage key={msg.id} role={msg.role} content={msg.content} />
-      ))}
-      {isStreaming && streamingContent && (
-        <MarkdownMessage role="assistant" content={streamingContent} isStreaming />
+      {items.map((item) => {
+        switch (item.type) {
+          case "user_message":
+            return (
+              <MarkdownMessage
+                key={item.id}
+                role="user"
+                content={item.text}
+              />
+            );
+
+          case "agent_text":
+            return (
+              <MarkdownMessage
+                key={item.id}
+                role="assistant"
+                content={item.content}
+                isStreaming={item.streaming}
+              />
+            );
+
+          case "reasoning":
+            return (
+              <ReasoningBlock key={item.id} item={item} />
+            );
+
+          case "command_call":
+            return (
+              <CommandCallCard
+                key={item.id}
+                item={item}
+                onApprove={onApprove}
+                onDeny={onDeny}
+              />
+            );
+
+          case "file_change":
+            return (
+              <FileChangeCard
+                key={item.id}
+                item={item}
+                onApprove={onApprove}
+                onDeny={onDeny}
+              />
+            );
+
+          case "system":
+            return (
+              <MarkdownMessage
+                key={item.id}
+                role="system"
+                content={item.content}
+              />
+            );
+
+          default:
+            return null;
+        }
+      })}
+
+      {/* Streaming indicator when turn is active but no streaming items yet */}
+      {turnActive && items.length > 0 && !items.some((i) => (i.type === "agent_text" && i.streaming) || (i.type === "reasoning" && i.streaming)) && (
+        <div className="mx-3 my-2 flex items-center gap-2">
+          <span className="spinner" />
+          <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>Codex 正在处理...</span>
+        </div>
       )}
     </div>
   );

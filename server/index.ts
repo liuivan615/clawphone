@@ -11,6 +11,7 @@ import chatRoutes from "./routes/chat.js";
 import approveRoutes from "./routes/approve.js";
 import statusRoutes from "./routes/status.js";
 import sessionRoutes from "./routes/sessions.js";
+import browseRoutes from "./routes/browse.js";
 import wsHandler from "./ws/handler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -52,6 +53,7 @@ async function main() {
   await app.register(approveRoutes);
   await app.register(statusRoutes);
   await app.register(sessionRoutes);
+  await app.register(browseRoutes);
 
   // WebSocket
   await app.register(wsHandler);
