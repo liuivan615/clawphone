@@ -1,0 +1,347 @@
+/* ── Fonts (must be before tailwindcss) ── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@import "tailwindcss";
+
+/* ── Dark Theme (default) ── */
+:root {
+  --font-ui: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  /* Surfaces — richer depth */
+  --bg-root: #09090b;
+  --bg-primary: #111113;
+  --bg-secondary: #18181b;
+  --bg-tertiary: #27272a;
+  --bg-hover: #303035;
+  --bg-active: #3b3b42;
+  --bg-glass: rgba(17, 17, 19, 0.82);
+  --bg-glow: radial-gradient(ellipse 600px 300px at 50% 0%, rgba(34, 211, 238, 0.06) 0%, transparent 70%);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  /* Text */
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #52525b;
+  --text-inverse: #09090b;
+
+  /* Accents */
+  --accent-cyan: #22d3ee;
+  --accent-cyan-dim: rgba(34, 211, 238, 0.1);
+  --accent-cyan-mid: rgba(34, 211, 238, 0.22);
+  --accent-cyan-glow: 0 0 20px rgba(34, 211, 238, 0.15);
+  --accent-amber: #fbbf24;
+  --accent-amber-dim: rgba(251, 191, 36, 0.1);
+  --accent-green: #34d399;
+  --accent-green-dim: rgba(52, 211, 153, 0.1);
+  --accent-red: #f87171;
+  --accent-red-dim: rgba(248, 113, 113, 0.1);
+
+  /* Diff */
+  --diff-add-bg: rgba(52, 211, 153, 0.08);
+  --diff-add-text: #6ee7b7;
+  --diff-del-bg: rgba(248, 113, 113, 0.08);
+  --diff-del-text: #fca5a5;
+
+  /* Drawer */
+  --drawer-backdrop: rgba(0, 0, 0, 0.6);
+
+  /* Shadows */
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255,255,255,0.05);
+  --shadow-btn: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+  /* Safe areas */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Animation tokens */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 0.18s;
+  --dur-normal: 0.3s;
+  --dur-slow: 0.5s;
+
+  color-scheme: dark;
+}
+
+/* ── Light Theme ── */
+[data-theme="light"] {
+  --bg-root: #f4f4f5;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f4f4f5;
+  --bg-tertiary: #e4e4e7;
+  --bg-hover: #d4d4d8;
+  --bg-active: #c4c4cc;
+  --bg-glass: rgba(255, 255, 255, 0.85);
+  --bg-glow: radial-gradient(ellipse 600px 300px at 50% 0%, rgba(8, 145, 178, 0.05) 0%, transparent 70%);
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-tertiary: #a1a1aa;
+  --text-inverse: #ffffff;
+
+  --accent-cyan: #0891b2;
+  --accent-cyan-dim: rgba(8, 145, 178, 0.08);
+  --accent-cyan-mid: rgba(8, 145, 178, 0.16);
+  --accent-cyan-glow: 0 0 20px rgba(8, 145, 178, 0.1);
+  --accent-amber: #d97706;
+  --accent-amber-dim: rgba(217, 119, 6, 0.08);
+  --accent-green: #059669;
+  --accent-green-dim: rgba(5, 150, 105, 0.08);
+  --accent-red: #dc2626;
+  --accent-red-dim: rgba(220, 38, 38, 0.06);
+
+  --diff-add-bg: rgba(5, 150, 105, 0.06);
+  --diff-add-text: #059669;
+  --diff-del-bg: rgba(220, 38, 38, 0.06);
+  --diff-del-text: #dc2626;
+
+  --drawer-backdrop: rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0,0,0,0.08);
+  --shadow-btn: 0 1px 3px rgba(0, 0, 0, 0.08);
+
+  color-scheme: light;
+}
+
+/* ── Base ── */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  background: var(--bg-root);
+  color: var(--text-primary);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+/* ── Code ── */
+code, pre, .font-mono { font-family: var(--font-mono); }
+pre { font-size: 13px; line-height: 1.6; }
+
+/* =============================================
+   ANIMATION SYSTEM
+   ============================================= */
+
+/* Drawer slide — spring physics */
+.drawer-enter-left {
+  animation: slideInLeft var(--dur-slow) var(--ease-spring) forwards;
+}
+.drawer-enter-right {
+  animation: slideInRight var(--dur-slow) var(--ease-spring) forwards;
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0.5; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0.5; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+/* Backdrop fade */
+.backdrop-enter {
+  animation: backdropIn var(--dur-normal) ease-out forwards;
+}
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Message entrance — slide up + fade */
+.msg-enter {
+  animation: msgSlideUp 0.35s var(--ease-spring) both;
+}
+@keyframes msgSlideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Stagger utility — each child delays slightly */
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+
+/* Page entrance */
+.page-enter {
+  animation: pageIn 0.4s var(--ease-out-expo) both;
+}
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Tab content crossfade */
+.tab-enter {
+  animation: tabFade 0.25s ease-out both;
+}
+@keyframes tabFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Button press — scale down on active */
+.btn-press {
+  transition: transform var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+.btn-press:active {
+  transform: scale(0.95);
+}
+
+/* Glow pulse for primary CTA */
+.btn-glow {
+  transition: all var(--dur-normal) ease;
+  box-shadow: var(--shadow-btn);
+}
+.btn-glow:hover:not(:disabled) {
+  box-shadow: var(--accent-cyan-glow);
+}
+.btn-glow:active:not(:disabled) {
+  transform: scale(0.96);
+  box-shadow: none;
+}
+
+/* Floating badge pulse */
+@keyframes pulseBadge {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.7; }
+}
+.badge-pulse { animation: pulseBadge 2s ease-in-out infinite; }
+
+/* Dropdown menu pop */
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Streaming cursor blink */
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink {
+  animation: cursorBlink 1s step-end infinite;
+}
+
+/* Spinner for loading states */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+/* Subtle breathing glow behind logo */
+@keyframes breathe {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
+.logo-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* =============================================
+   GLASS MORPHISM
+   ============================================= */
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.drawer-glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: var(--shadow-lg);
+}
+
+/* =============================================
+   INTERACTIVE STATES
+   ============================================= */
+.interactive {
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+  cursor: pointer;
+}
+.interactive:hover { background: var(--bg-hover); }
+.interactive:active { background: var(--bg-active); }
+
+/* Focus ring */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+
+/* =============================================
+   MARKDOWN PROSE
+   ============================================= */
+.prose-ide h1, .prose-ide h2, .prose-ide h3 {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+.prose-ide h1 { font-size: 1.25em; }
+.prose-ide h2 { font-size: 1.1em; }
+.prose-ide h3 { font-size: 1em; }
+.prose-ide p {
+  color: var(--text-primary);
+  line-height: 1.7;
+  margin: 0.5em 0;
+}
+.prose-ide a {
+  color: var(--accent-cyan);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--dur-fast) ease;
+}
+.prose-ide a:hover { border-bottom-color: var(--accent-cyan); }
+.prose-ide code:not(pre code) {
+  background: var(--bg-tertiary);
+  padding: 0.15em 0.45em;
+  border-radius: 5px;
+  font-size: 0.85em;
+  color: var(--accent-cyan);
+}
+.prose-ide pre {
+  background: var(--bg-root);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0.6em 0;
+  position: relative;
+}
+.prose-ide ul, .prose-ide ol { padding-left: 1.5em; margin: 0.5em 0; }
+.prose-ide li { margin: 0.25em 0; color: var(--text-primary); line-height: 1.6; }
+.prose-ide li::marker { color: var(--text-tertiary); }
+.prose-ide blockquote {
+  border-left: 3px solid var(--accent-cyan);
+  padding-left: 14px;
+  color: var(--text-secondary);
+  margin: 0.8em 0;
+  font-style: italic;
+}
+.prose-ide hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 1.2em 0;
+}
+.prose-ide strong { color: var(--text-primary); font-weight: 600; }
+.prose-ide em { color: var(--text-secondary); }

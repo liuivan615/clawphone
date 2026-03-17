@@ -1,0 +1,15 @@
+[Unit]
+Description=ClawPhone Mobile Control Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/clawphone
+ExecStart=/usr/bin/node dist/server/start.js
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
