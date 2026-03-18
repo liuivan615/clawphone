@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { spawnSync } from "child_process";
 import { getCodexConfig } from "../gateway-client.js";
 
-function git(cwd: string, args: string[]): string {
+function git(cwd: string, args: string[], allowedStatuses: number[] = [0]): string {
   const result = spawnSync("git", args, {
     cwd,
     timeout: 15000,
@@ -15,7 +15,7 @@ function git(cwd: string, args: string[]): string {
     throw result.error;
   }
 
-  if (result.status !== 0) {
+  if (!allowedStatuses.includes(result.status ?? -1)) {
     const msg = result.stderr?.trim() || result.stdout?.trim() || `git exited with code ${result.status}`;
     throw new Error(msg);
   }
@@ -92,6 +92,12 @@ export default async function gitRoutes(app: FastifyInstance) {
       if (!cwd) return { error: "cwd required" };
 
       try {
+        if (mode === "untracked") {
+          if (!path) return { error: "path required for untracked diff" };
+          const diff = git(cwd, ["diff", "--no-index", "--", "/dev/null", path], [0, 1]);
+          return { diff };
+        }
+
         const diffArgs = ["diff"];
 
         if (mode === "all") {
@@ -306,6 +312,44 @@ export default async function gitRoutes(app: FastifyInstance) {
     try {
       git(cwd, ["branch", "-d", name]);
       return { ok: true };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Create PR using GitHub CLI
+  app.post<{
+    Body: { cwd: string; title?: string; body?: string; draft?: boolean };
+  }>("/api/git/pr", async (req) => {
+    const { cwd, title, body, draft } = req.body;
+    if (!cwd) return { error: "cwd required" };
+
+    try {
+      // Check if gh is available
+      const ghVersion = spawnSync("gh", ["--version"], { encoding: "utf-8", timeout: 5000 });
+      if (ghVersion.status !== 0) {
+        return { error: "GitHub CLI (gh) 未安装。运行: winget install GitHub.cli" };
+      }
+
+      const args = ["pr", "create"];
+      if (title) args.push("--title", title);
+      if (body) args.push("--body", body);
+      if (draft) args.push("--draft");
+      if (!title) args.push("--fill");
+
+      const result = spawnSync("gh", args, {
+        cwd,
+        encoding: "utf-8",
+        timeout: 30000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      if (result.status !== 0) {
+        throw new Error(result.stderr?.trim() || `gh exited with code ${result.status}`);
+      }
+
+      const prUrl = (result.stdout || "").trim();
+      return { ok: true, url: prUrl };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }

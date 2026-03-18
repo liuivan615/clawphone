@@ -47,8 +47,8 @@ export function MainLayout({ leftDrawer, rightDrawer, children }: Props) {
     <div className="relative h-full overflow-hidden flex" style={{ background: "var(--bg-root)" }}>
       {/* Tablet: persistent left sidebar */}
       <aside
-        className="hidden lg:flex flex-col w-[280px] shrink-0 border-r"
-        style={{ background: "var(--bg-primary)", borderColor: "var(--border-subtle)" }}
+        className="hidden lg:flex flex-col w-[280px] shrink-0"
+        style={{ background: "var(--bg-primary)" }}
       >
         {leftDrawer}
       </aside>
@@ -78,8 +78,8 @@ export function MainLayout({ leftDrawer, rightDrawer, children }: Props) {
 
       {/* Tablet: persistent right sidebar */}
       <aside
-        className="hidden xl:flex flex-col w-[340px] shrink-0 border-l"
-        style={{ background: "var(--bg-primary)", borderColor: "var(--border-subtle)" }}
+        className="hidden xl:flex flex-col w-[340px] shrink-0"
+        style={{ background: "var(--bg-primary)" }}
       >
         {rightDrawer}
       </aside>

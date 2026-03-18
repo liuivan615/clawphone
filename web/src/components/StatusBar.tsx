@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 
 const PERMISSION_OPTIONS = [
   { value: "on-request", label: "默认权限", icon: "shield", color: "var(--text-secondary)" },
+  { value: "on-failure", label: "失败时审批", icon: "shield", color: "var(--accent-cyan)" },
   { value: "never", label: "完全访问权限", icon: "shield-warn", color: "var(--accent-amber)" },
 ];
 

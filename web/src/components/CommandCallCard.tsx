@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { CommandCallItem } from "../lib/conversation-types";
 
 interface Props {
@@ -17,7 +17,22 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function CommandCallCard({ item, onApprove, onDeny }: Props) {
-  const [expanded, setExpanded] = useState(item.status === "running" || item.status === "pending");
+  const [expanded, setExpanded] = useState(true);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const prevStatus = useRef(item.status);
+
+  // Auto-collapse when completed/failed
+  useEffect(() => {
+    if (
+      (item.status === "completed" || item.status === "failed" || item.status === "denied") &&
+      prevStatus.current !== item.status
+    ) {
+      // Delay collapse slightly so user sees the result flash
+      const timer = setTimeout(() => setExpanded(false), 600);
+      return () => clearTimeout(timer);
+    }
+    prevStatus.current = item.status;
+  }, [item.status]);
 
   const isPending = item.status === "pending";
   const isRunning = item.status === "running";
@@ -32,13 +47,13 @@ export function CommandCallCard({ item, onApprove, onDeny }: Props) {
         background: "var(--bg-secondary)",
         border: `1px solid ${isPending ? "var(--accent-amber-mid)" : "var(--border-default)"}`,
         opacity: isDenied ? 0.6 : 1,
+        transition: "opacity 0.3s ease, border-color 0.3s ease",
       }}
     >
       {/* Header */}
       <div
         className="flex items-center gap-2 px-3 py-2 cursor-pointer"
         onClick={() => setExpanded((v) => !v)}
-        style={{ borderBottom: expanded ? "1px solid var(--border-subtle)" : "none" }}
       >
         {/* Icon */}
         <div
@@ -68,22 +83,19 @@ export function CommandCallCard({ item, onApprove, onDeny }: Props) {
             style={{
               background: isCompleted
                 ? "var(--accent-green-dim)"
-                : isFailed
-                ? "var(--accent-red-dim)"
-                : isDenied
+                : isFailed || isDenied
                 ? "var(--accent-red-dim)"
                 : isRunning
                 ? "var(--accent-cyan-dim)"
                 : "var(--bg-tertiary)",
               color: isCompleted
                 ? "var(--accent-green)"
-                : isFailed
-                ? "var(--accent-red)"
-                : isDenied
+                : isFailed || isDenied
                 ? "var(--accent-red)"
                 : isRunning
                 ? "var(--accent-cyan)"
                 : "var(--text-tertiary)",
+              transition: "all 0.3s ease",
             }}
           >
             {STATUS_LABELS[item.status] || item.status}
@@ -100,78 +112,94 @@ export function CommandCallCard({ item, onApprove, onDeny }: Props) {
         {/* Expand chevron */}
         <svg
           width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round"
-          style={{ transition: "transform 0.15s ease", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", marginLeft: item.durationMs !== null ? "0" : "auto" }}
+          style={{
+            transition: "transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)",
+            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+            marginLeft: item.durationMs !== null ? "0" : "auto",
+          }}
         >
           <path d="M3 4.5l3 3 3-3" />
         </svg>
       </div>
 
-      {/* Command */}
-      <div className="px-3 py-2">
-        <pre
-          className="text-xs leading-relaxed whitespace-pre-wrap break-all"
-          style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
-        >
-          {item.command}
-        </pre>
-      </div>
-
-      {/* Output (collapsible) */}
-      {expanded && item.output && (
-        <div
-          className="px-3 py-2 text-xs leading-relaxed overflow-x-auto"
-          style={{
-            background: "var(--bg-primary)",
-            borderTop: "1px solid var(--border-subtle)",
-            color: "var(--text-secondary)",
-            fontFamily: "var(--font-mono)",
-            maxHeight: "300px",
-            overflowY: "auto",
-          }}
-        >
-          <pre className="whitespace-pre-wrap break-all">{item.output}</pre>
-        </div>
-      )}
-
-      {/* Spinner for running */}
-      {isRunning && !item.output && (
-        <div className="px-3 py-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-          <div className="flex items-center gap-2">
-            <span className="spinner" />
-            <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>执行中...</span>
+      {/* Collapsible content with smooth animation */}
+      <div
+        ref={contentRef}
+        style={{
+          display: "grid",
+          gridTemplateRows: expanded ? "1fr" : "0fr",
+          transition: "grid-template-rows 0.4s cubic-bezier(0.25, 1, 0.5, 1)",
+        }}
+      >
+        <div style={{ overflow: "hidden" }}>
+          {/* Command */}
+          <div className="px-3 py-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            <pre
+              className="text-xs leading-relaxed whitespace-pre-wrap break-all"
+              style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
+            >
+              {item.command}
+            </pre>
           </div>
-        </div>
-      )}
 
-      {/* Approval buttons */}
-      {isPending && item.requestId !== undefined && (
-        <div
-          className="flex items-center gap-2 px-3 py-2.5"
-          style={{ borderTop: "1px solid var(--border-subtle)" }}
-        >
-          <button
-            onClick={() => onDeny?.(item.requestId!)}
-            className="flex-1 py-2 rounded-lg text-xs font-semibold btn-press"
-            style={{
-              background: "var(--bg-tertiary)",
-              color: "var(--accent-red)",
-              border: "1px solid var(--accent-red-dim)",
-            }}
-          >
-            拒绝
-          </button>
-          <button
-            onClick={() => onApprove?.(item.requestId!)}
-            className="flex-1 py-2 rounded-lg text-xs font-semibold btn-press"
-            style={{
-              background: "var(--accent-cyan)",
-              color: "var(--text-inverse)",
-            }}
-          >
-            允许
-          </button>
+          {/* Output */}
+          {item.output && (
+            <div
+              className="px-3 py-2 text-xs leading-relaxed overflow-x-auto"
+              style={{
+                background: "var(--bg-primary)",
+                borderTop: "1px solid var(--border-subtle)",
+                color: "var(--text-secondary)",
+                fontFamily: "var(--font-mono)",
+                maxHeight: "300px",
+                overflowY: "auto",
+              }}
+            >
+              <pre className="whitespace-pre-wrap break-all">{item.output}</pre>
+            </div>
+          )}
+
+          {/* Spinner for running */}
+          {isRunning && !item.output && (
+            <div className="px-3 py-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+              <div className="flex items-center gap-2">
+                <span className="spinner" />
+                <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>执行中...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Approval buttons */}
+          {isPending && item.requestId !== undefined && (
+            <div
+              className="flex items-center gap-2 px-3 py-2.5"
+              style={{ borderTop: "1px solid var(--border-subtle)" }}
+            >
+              <button
+                onClick={() => onDeny?.(item.requestId!)}
+                className="flex-1 py-2 rounded-lg text-xs font-semibold btn-press"
+                style={{
+                  background: "var(--bg-tertiary)",
+                  color: "var(--accent-red)",
+                  border: "1px solid var(--accent-red-dim)",
+                }}
+              >
+                拒绝
+              </button>
+              <button
+                onClick={() => onApprove?.(item.requestId!)}
+                className="flex-1 py-2 rounded-lg text-xs font-semibold btn-press"
+                style={{
+                  background: "var(--accent-cyan)",
+                  color: "var(--text-inverse)",
+                }}
+              >
+                允许
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

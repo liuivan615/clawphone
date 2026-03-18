@@ -71,23 +71,42 @@ export function useWebSocket() {
   // ── New API methods ──
 
   const startSession = useCallback(
-    (workspace: string, opts?: { model?: string; reasoningEffort?: string; prompt?: string; approvalPolicy?: string }) => {
-      return send({
+    (
+      workspace: string,
+      opts?: {
+        model?: string;
+        reasoningEffort?: string;
+        prompt?: string;
+        approvalPolicy?: string;
+        skipThreadStart?: boolean;
+      }
+    ) => {
+      const clientRequestId = `start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const sent = send({
         type: "start_session",
+        clientRequestId,
         workspace,
         model: opts?.model,
         reasoningEffort: opts?.reasoningEffort,
         prompt: opts?.prompt,
         approvalPolicy: opts?.approvalPolicy,
+        skipThreadStart: opts?.skipThreadStart,
       });
+
+      return sent ? clientRequestId : null;
     },
     [send]
   );
 
   const sendMessage = useCallback(
-    (text: string, opts?: { model?: string; reasoningEffort?: string; collaborationMode?: string }) => {
+    (
+      sessionId: string,
+      text: string,
+      opts?: { model?: string; reasoningEffort?: string; collaborationMode?: string }
+    ) => {
       return send({
         type: "send_message",
+        sessionId,
         text,
         model: opts?.model,
         reasoningEffort: opts?.reasoningEffort,
@@ -98,9 +117,10 @@ export function useWebSocket() {
   );
 
   const approve = useCallback(
-    (requestId: number, decision?: string) => {
+    (sessionId: string, requestId: number, decision?: string) => {
       return send({
         type: "approve",
+        sessionId,
         requestId,
         decision: decision || "approved",
       });
@@ -109,35 +129,35 @@ export function useWebSocket() {
   );
 
   const deny = useCallback(
-    (requestId: number) => {
-      return send({ type: "deny", requestId });
+    (sessionId: string, requestId: number) => {
+      return send({ type: "deny", sessionId, requestId });
     },
     [send]
   );
 
   const grantPermissions = useCallback(
-    (requestId: number, scope: "turn" | "session") => {
-      return send({ type: "grant_permissions", requestId, scope });
+    (sessionId: string, requestId: number, scope: "turn" | "session") => {
+      return send({ type: "grant_permissions", sessionId, requestId, scope });
     },
     [send]
   );
 
   const submitUserInput = useCallback(
-    (requestId: number, answers: Record<string, string[]>) => {
-      return send({ type: "submit_user_input", requestId, answers });
+    (sessionId: string, requestId: number, answers: Record<string, string[]>) => {
+      return send({ type: "submit_user_input", sessionId, requestId, answers });
     },
     [send]
   );
 
   const rejectRequest = useCallback(
-    (requestId: number, message?: string) => {
-      return send({ type: "reject_request", requestId, message });
+    (sessionId: string, requestId: number, message?: string) => {
+      return send({ type: "reject_request", sessionId, requestId, message });
     },
     [send]
   );
 
-  const interrupt = useCallback(() => {
-    return send({ type: "interrupt" });
+  const interrupt = useCallback((sessionId: string) => {
+    return send({ type: "interrupt", sessionId });
   }, [send]);
 
   const killSession = useCallback(
@@ -147,16 +167,27 @@ export function useWebSocket() {
     [send]
   );
 
-  const listThreads = useCallback(() => {
-    return send({ type: "list_threads" });
+  const listThreads = useCallback((sessionId: string) => {
+    return send({ type: "list_threads", sessionId });
   }, [send]);
 
   const resumeThread = useCallback(
-    (threadId: string) => {
-      return send({ type: "resume_thread", threadId });
+    (sessionId: string, threadId: string) => {
+      return send({ type: "resume_thread", sessionId, threadId });
     },
     [send]
   );
+
+  const attachSession = useCallback(
+    (sessionId: string) => {
+      return send({ type: "attach_session", sessionId });
+    },
+    [send]
+  );
+
+  const listSessions = useCallback(() => {
+    return send({ type: "list_sessions" });
+  }, [send]);
 
   useEffect(() => {
     connect();
@@ -183,5 +214,7 @@ export function useWebSocket() {
     killSession,
     listThreads,
     resumeThread,
+    attachSession,
+    listSessions,
   };
 }

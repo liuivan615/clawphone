@@ -48,6 +48,30 @@ export const api = {
     return getToken();
   },
   getStatus: () => apiFetch<import("./types").StatusPayload>("/api/status"),
+  getHistoryWorkspaces: () =>
+    apiFetch<{ workspaces: import("./types").HistoryWorkspaceSummary[]; codexHome: string }>(
+      "/api/history/workspaces"
+    ),
+  getHistoryThreads: (params?: { workspace?: string; q?: string; limit?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.workspace) search.set("workspace", params.workspace);
+    if (params?.q) search.set("q", params.q);
+    if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+
+    const suffix = search.size > 0 ? `?${search.toString()}` : "";
+    return apiFetch<{ threads: import("./types").HistoryThreadSummary[] }>(
+      `/api/history/threads${suffix}`
+    );
+  },
+  getHistoryThread: (threadId: string) =>
+    apiFetch<{ thread: import("./types").HistoryThreadSnapshot }>(
+      `/api/history/threads/${encodeURIComponent(threadId)}`
+    ),
+  continueHistoryThread: (threadId: string) =>
+    apiFetch<import("./types").HistoryContinuePayload>("/api/history/continue", {
+      method: "POST",
+      body: JSON.stringify({ threadId }),
+    }),
 
   getSessions: () =>
     apiFetch<import("./types").SessionSummary[]>("/api/sessions"),

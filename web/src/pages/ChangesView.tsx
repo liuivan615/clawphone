@@ -52,7 +52,7 @@ export function ChangesView({ workspace }: Props) {
     fetchStatus();
   }, [fetchStatus]);
 
-  const loadFileDiff = useCallback(async (path: string, mode: "working" | "staged" | "all") => {
+  const loadFileDiff = useCallback(async (path: string, mode: "working" | "staged" | "all" | "untracked") => {
     setFileDiff("加载中...");
     try {
       const res = await fetch(
@@ -81,7 +81,9 @@ export function ChangesView({ workspace }: Props) {
     if (!expanded) return;
 
     const mode =
-      includeUnstaged
+      expanded.status === "??"
+        ? "untracked"
+        : includeUnstaged
         ? "all"
         : expanded.staged
         ? "staged"
@@ -134,12 +136,37 @@ export function ChangesView({ workspace }: Props) {
         }
       }
 
+      // Create PR if requested
+      if (commitAction === "commit-pr") {
+        const prRes = await fetch("/api/git/pr", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${api.token}`,
+          },
+          body: JSON.stringify({
+            cwd: workspace,
+            title: commitMsg || undefined,
+          }),
+        });
+        const prData = await prRes.json();
+        if (prData.error) {
+          setCommitResult(`已提交并推送 (${commitData.hash})，但创建 PR 失败: ${prData.error}`);
+          setCommitting(false);
+          fetchStatus();
+          return;
+        }
+        setCommitResult(`已创建 PR: ${prData.url}`);
+        setCommitMsg("");
+        fetchStatus();
+        setCommitting(false);
+        return;
+      }
+
       setCommitResult(
         commitAction === "commit"
           ? `已提交 ${commitData.hash}`
-          : commitAction === "commit-push"
-          ? `已提交并推送 ${commitData.hash}`
-          : `已提交并推送 ${commitData.hash}（PR 需手动创建）`
+          : `已提交并推送 ${commitData.hash}`
       );
       setCommitMsg("");
       fetchStatus();

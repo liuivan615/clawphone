@@ -13,6 +13,7 @@ import statusRoutes from "./routes/status.js";
 import sessionRoutes from "./routes/sessions.js";
 import browseRoutes from "./routes/browse.js";
 import gitRoutes from "./routes/git.js";
+import historyRoutes from "./routes/history.js";
 import wsHandler from "./ws/handler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +57,7 @@ async function main() {
   await app.register(sessionRoutes);
   await app.register(browseRoutes);
   await app.register(gitRoutes);
+  await app.register(historyRoutes);
 
   // WebSocket
   await app.register(wsHandler);

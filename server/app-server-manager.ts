@@ -200,7 +200,7 @@ class AppServerManager extends EventEmitter {
         version: "0.1.0",
       },
       capabilities: {
-        experimentalApi: false,
+        experimentalApi: true,
       },
     });
 
@@ -231,7 +231,7 @@ class AppServerManager extends EventEmitter {
       model: opts.model || undefined,
       approvalPolicy: opts.approvalPolicy || "on-request",
       experimentalRawEvents: false,
-      persistExtendedHistory: false,
+      persistExtendedHistory: true,
     })) as { thread: Thread };
 
     session.threadId = result.thread.id;
@@ -384,6 +384,15 @@ class AppServerManager extends EventEmitter {
   }
 
   /**
+   * List available skills.
+   */
+  async listSkills(sessionId: string): Promise<unknown> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    return this.sendRequest(session, "skills/list", {});
+  }
+
+  /**
    * Interrupt the current turn.
    */
   async interruptTurn(sessionId: string): Promise<void> {
@@ -402,7 +411,10 @@ class AppServerManager extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
-    const result = (await this.sendRequest(session, "thread/list", {})) as { threads: unknown[] };
+    const result = (await this.sendRequest(session, "thread/list", {
+      limit: 200,
+      // No cwd filter — show ALL threads from all workspaces
+    })) as { threads: unknown[] };
     return result.threads || [];
   }
 

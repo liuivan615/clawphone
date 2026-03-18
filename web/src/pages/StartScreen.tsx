@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { api } from "../lib/api";
+import type { WorkspaceHistoryEntry } from "../lib/workspace-history";
 
 interface DirEntry {
   name: string;
@@ -11,9 +12,14 @@ interface Props {
   connected: boolean;
   onStart: (workspace: string, prompt?: string) => void;
   lastError?: string | null;
+  workspaceHistory: WorkspaceHistoryEntry[];
 }
 
-export function StartScreen({ connected, onStart, lastError }: Props) {
+function getWorkspaceName(workspace: string): string {
+  return workspace.split("\\").pop() || workspace;
+}
+
+export function StartScreen({ connected, onStart, lastError, workspaceHistory }: Props) {
   const [workspace, setWorkspace] = useState("");
   const [prompt, setPrompt] = useState("");
   const [browsing, setBrowsing] = useState(false);
@@ -22,24 +28,6 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
   const [drives, setDrives] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load saved recent dirs from localStorage
-  const [recentDirs, setRecentDirs] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("clawphone_recent_dirs") || "[]");
-    } catch {
-      return [];
-    }
-  });
-
-  const saveRecent = useCallback((dir: string) => {
-    setRecentDirs((prev) => {
-      const updated = [dir, ...prev.filter((d) => d !== dir)].slice(0, 10);
-      localStorage.setItem("clawphone_recent_dirs", JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
-  // Browse directories
   const loadDir = useCallback(async (path: string) => {
     setLoading(true);
     try {
@@ -55,7 +43,6 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
     setLoading(false);
   }, []);
 
-  // Load drives on first browse
   const openBrowser = useCallback(async () => {
     setBrowsing(true);
     if (drives.length === 0) {
@@ -70,42 +57,32 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
       }
     }
     await loadDir(browsePath);
-  }, [drives, browsePath, loadDir]);
+  }, [browsePath, drives.length, loadDir]);
 
-  // Navigate up
   const goUp = useCallback(() => {
     const parts = browsePath.replace(/\\$/, "").split("\\");
     if (parts.length <= 1) return;
     parts.pop();
-    const parent = parts.join("\\") + "\\";
-    loadDir(parent);
+    loadDir(parts.join("\\") + "\\");
   }, [browsePath, loadDir]);
 
-  // Select directory and close browser
   const selectDir = useCallback((path: string) => {
     setWorkspace(path);
     setBrowsing(false);
-    saveRecent(path);
-  }, [saveRecent]);
-
-  const handleStart = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!workspace.trim()) return;
-    saveRecent(workspace.trim());
-    onStart(workspace.trim(), prompt.trim() || undefined);
-  };
-
-  // Auto-select if only one recent
-  useEffect(() => {
-    if (!workspace && recentDirs.length > 0) {
-      // Don't auto-select, let user choose
-    }
   }, []);
+
+  const handleStart = useCallback(
+    (event: React.FormEvent) => {
+      event.preventDefault();
+      if (!workspace.trim()) return;
+      onStart(workspace.trim(), prompt.trim() || undefined);
+    },
+    [onStart, prompt, workspace]
+  );
 
   if (browsing) {
     return (
       <div className="flex flex-col h-full page-enter">
-        {/* Browser header */}
         <div
           className="flex items-center gap-2 px-3 h-12 shrink-0 border-b"
           style={{ background: "var(--bg-secondary)", borderColor: "var(--border-subtle)" }}
@@ -131,11 +108,7 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
           </button>
         </div>
 
-        {/* Current path + up button */}
-        <div
-          className="flex items-center gap-2 px-3 py-2 border-b"
-          style={{ borderColor: "var(--border-subtle)" }}
-        >
+        <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
           <button
             onClick={goUp}
             className="w-7 h-7 flex items-center justify-center rounded-md btn-press shrink-0"
@@ -145,35 +118,30 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
               <path d="M6 9V3M3 5.5L6 3l3 2.5" />
             </svg>
           </button>
-          <span
-            className="text-xs truncate flex-1"
-            style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
-          >
+          <span className="text-xs truncate flex-1" style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
             {browsePath}
           </span>
         </div>
 
-        {/* Drive buttons */}
         {drives.length > 1 && (
           <div className="flex gap-1.5 px-3 py-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
-            {drives.map((d) => (
+            {drives.map((drive) => (
               <button
-                key={d}
-                onClick={() => loadDir(d)}
+                key={drive}
+                onClick={() => loadDir(drive)}
                 className="px-2.5 py-1 rounded-md text-xs font-medium btn-press"
                 style={{
-                  background: browsePath.startsWith(d) ? "var(--accent-cyan-dim)" : "var(--bg-tertiary)",
-                  color: browsePath.startsWith(d) ? "var(--accent-cyan)" : "var(--text-secondary)",
+                  background: browsePath.startsWith(drive) ? "var(--accent-cyan-dim)" : "var(--bg-tertiary)",
+                  color: browsePath.startsWith(drive) ? "var(--accent-cyan)" : "var(--text-secondary)",
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                {d.replace("\\", "")}
+                {drive.replace("\\", "")}
               </button>
             ))}
           </div>
         )}
 
-        {/* Directory list */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-8">
@@ -184,37 +152,29 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
               没有子目录
             </div>
           ) : (
-            dirs.map((d) => (
+            dirs.map((dir) => (
               <div
-                key={d.path}
+                key={dir.path}
                 className="flex items-center gap-2.5 px-3 py-2.5 border-b cursor-pointer"
                 style={{ borderColor: "var(--border-subtle)" }}
-                onClick={() => loadDir(d.path)}
-                onDoubleClick={() => selectDir(d.path)}
+                onClick={() => loadDir(dir.path)}
+                onDoubleClick={() => selectDir(dir.path)}
               >
-                {/* Folder icon */}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill={d.isGitRepo ? "var(--accent-cyan)" : "var(--text-tertiary)"} className="shrink-0">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill={dir.isGitRepo ? "var(--accent-cyan)" : "var(--text-tertiary)"}>
                   <path d="M1.5 3A1.5 1.5 0 013 1.5h3.172a1.5 1.5 0 011.06.44l.829.828a.5.5 0 00.353.147H13A1.5 1.5 0 0114.5 4.5v7.5a1.5 1.5 0 01-1.5 1.5H3A1.5 1.5 0 011.5 12V3z" />
                 </svg>
-                <span
-                  className="text-sm flex-1 truncate"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  {d.name}
+                <span className="text-sm flex-1 truncate" style={{ color: "var(--text-primary)" }}>
+                  {dir.name}
                 </span>
-                {d.isGitRepo && (
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0"
-                    style={{ background: "var(--accent-cyan-dim)", color: "var(--accent-cyan)" }}
-                  >
+                {dir.isGitRepo && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0" style={{ background: "var(--accent-cyan-dim)", color: "var(--accent-cyan)" }}>
                     Git
                   </span>
                 )}
-                {/* Select button */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectDir(d.path);
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    selectDir(dir.path);
                   }}
                   className="px-2 py-1 rounded-md text-[10px] font-medium btn-press shrink-0"
                   style={{ background: "var(--bg-tertiary)", color: "var(--accent-cyan)" }}
@@ -232,17 +192,10 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
   return (
     <div className="flex items-center justify-center h-full px-5">
       <div className="w-full max-w-md space-y-5 page-enter">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="relative inline-block">
-            <div
-              className="logo-breathe absolute inset-0 blur-2xl rounded-full"
-              style={{ background: "var(--accent-cyan)", opacity: 0.15 }}
-            />
-            <h1
-              className="relative text-3xl font-bold tracking-tight"
-              style={{ color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}
-            >
+            <div className="logo-breathe absolute inset-0 blur-2xl rounded-full" style={{ background: "var(--accent-cyan)", opacity: 0.15 }} />
+            <h1 className="relative text-3xl font-bold tracking-tight" style={{ color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
               ClawPhone
             </h1>
           </div>
@@ -251,43 +204,27 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
           </p>
         </div>
 
-        {/* Selected workspace display */}
         {workspace ? (
           <div
             className="flex items-center gap-2 px-4 py-3 rounded-xl border"
-            style={{
-              background: "var(--bg-secondary)",
-              borderColor: "var(--accent-cyan-mid)",
-            }}
+            style={{ background: "var(--bg-secondary)", borderColor: "var(--accent-cyan-mid)" }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="var(--accent-cyan)" className="shrink-0">
               <path d="M1.5 3A1.5 1.5 0 013 1.5h3.172a1.5 1.5 0 011.06.44l.829.828a.5.5 0 00.353.147H13A1.5 1.5 0 0114.5 4.5v7.5a1.5 1.5 0 01-1.5 1.5H3A1.5 1.5 0 011.5 12V3z" />
             </svg>
-            <span
-              className="text-sm flex-1 truncate"
-              style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
-            >
+            <span className="text-sm flex-1 truncate" style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
               {workspace}
             </span>
-            <button
-              onClick={() => setWorkspace("")}
-              className="text-xs btn-press"
-              style={{ color: "var(--text-tertiary)" }}
-            >
+            <button onClick={() => setWorkspace("")} className="text-xs btn-press" style={{ color: "var(--text-tertiary)" }}>
               更换
             </button>
           </div>
         ) : (
           <>
-            {/* Browse button */}
             <button
               onClick={openBrowser}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border border-dashed btn-press"
-              style={{
-                borderColor: "var(--border-strong)",
-                color: "var(--text-secondary)",
-                background: "var(--bg-secondary)",
-              }}
+              style={{ borderColor: "var(--border-strong)", color: "var(--text-secondary)", background: "var(--bg-secondary)" }}
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M2 4.5A1.5 1.5 0 013.5 3h3.379a1.5 1.5 0 011.06.44l1.122 1.12a1.5 1.5 0 001.06.44H14.5A1.5 1.5 0 0116 6.5V13a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 012 13V4.5z" />
@@ -296,19 +233,16 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
               <span className="text-sm font-medium">添加项目文件夹</span>
             </button>
 
-            {/* Recent directories */}
-            {recentDirs.length > 0 && (
+            {workspaceHistory.length > 0 && (
               <div>
                 <div className="text-xs font-medium mb-2" style={{ color: "var(--text-tertiary)" }}>
-                  最近使用
+                  工作区
                 </div>
                 <div className="space-y-1">
-                  {recentDirs.map((dir) => (
+                  {workspaceHistory.map((entry) => (
                     <button
-                      key={dir}
-                      onClick={() => {
-                        setWorkspace(dir);
-                      }}
+                      key={entry.workspace}
+                      onClick={() => setWorkspace(entry.workspace)}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left btn-press"
                       style={{ background: "var(--bg-secondary)" }}
                     >
@@ -317,13 +251,10 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
                       </svg>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                          {dir.split("\\").pop() || dir}
+                          {entry.lastTitle || getWorkspaceName(entry.workspace)}
                         </div>
-                        <div
-                          className="text-[10px] truncate"
-                          style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}
-                        >
-                          {dir}
+                        <div className="text-[10px] truncate" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>
+                          {entry.workspace}
                         </div>
                       </div>
                     </button>
@@ -334,19 +265,15 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
           </>
         )}
 
-        {/* Prompt */}
         {workspace && (
           <div>
-            <label
-              className="block text-xs font-medium mb-2"
-              style={{ color: "var(--text-secondary)" }}
-            >
+            <label className="block text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
               初始提示
               <span style={{ color: "var(--text-tertiary)" }}>（可选）</span>
             </label>
             <textarea
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(event) => setPrompt(event.target.value)}
               placeholder="例如：修复 auth.ts 中的认证问题"
               rows={3}
               autoFocus
@@ -357,36 +284,27 @@ export function StartScreen({ connected, onStart, lastError }: Props) {
                 borderColor: "var(--border-default)",
                 fontFamily: "var(--font-ui)",
               }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent-cyan)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-default)")}
+              onFocus={(event) => (event.currentTarget.style.borderColor = "var(--accent-cyan)")}
+              onBlur={(event) => (event.currentTarget.style.borderColor = "var(--border-default)")}
             />
           </div>
         )}
 
-        {/* Error from last session */}
         {lastError && (
           <div
             className="px-3.5 py-2.5 rounded-xl text-xs font-medium"
-            style={{
-              background: "var(--accent-red-dim)",
-              color: "var(--accent-red)",
-              border: "1px solid rgba(248, 113, 113, 0.2)",
-            }}
+            style={{ background: "var(--accent-red-dim)", color: "var(--accent-red)", border: "1px solid rgba(248, 113, 113, 0.2)" }}
           >
             {lastError}
           </div>
         )}
 
-        {/* Launch button */}
         {workspace && (
           <button
             onClick={() => handleStart({ preventDefault: () => {} } as React.FormEvent)}
             disabled={!connected || !workspace.trim()}
             className="w-full py-3.5 rounded-xl text-sm font-semibold disabled:opacity-40 btn-glow btn-press"
-            style={{
-              background: "var(--accent-cyan)",
-              color: "var(--text-inverse)",
-            }}
+            style={{ background: "var(--accent-cyan)", color: "var(--text-inverse)" }}
           >
             {connected ? "启动 Codex" : "连接中..."}
           </button>

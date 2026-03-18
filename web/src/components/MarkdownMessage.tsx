@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 interface Props {
   role: "user" | "assistant" | "system";
@@ -53,10 +55,27 @@ function CodeBlock({ children, className }: { children: string; className?: stri
           )}
         </button>
       </div>
-      {/* Code content */}
-      <pre className="px-3 py-2.5 overflow-x-auto text-[12px] leading-relaxed" style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-        <code>{children}</code>
-      </pre>
+      {/* Code content with syntax highlighting */}
+      {lang ? (
+        <SyntaxHighlighter
+          language={lang}
+          style={oneDark}
+          customStyle={{
+            margin: 0,
+            padding: "12px",
+            background: "transparent",
+            fontSize: "12px",
+            lineHeight: "1.6",
+          }}
+          codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
+        >
+          {children.trim()}
+        </SyntaxHighlighter>
+      ) : (
+        <pre className="px-3 py-2.5 overflow-x-auto text-[12px] leading-relaxed" style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+          <code>{children}</code>
+        </pre>
+      )}
     </div>
   );
 }
@@ -96,16 +115,17 @@ export function MarkdownMessage({ role, content, isStreaming }: Props) {
 
   if (role === "user") {
     return (
-      <div className="msg-enter flex justify-end px-3 py-1">
+      <div className="msg-enter flex justify-end px-4 py-3">
         <div
-          className="max-w-[85%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm btn-press"
+          className="max-w-[85%] px-5 py-3 text-[15px]"
           style={{
-            background: "var(--accent-cyan)",
-            color: "var(--text-inverse)",
-            boxShadow: "0 2px 8px rgba(34, 211, 238, 0.2)",
+            background: "var(--bg-secondary)",
+            color: "var(--text-primary)",
+            borderRadius: "0",
+            borderRight: "2px solid var(--accent-cyan)",
           }}
         >
-          <p className="whitespace-pre-wrap leading-relaxed font-medium">{content}</p>
+          <p className="whitespace-pre-wrap leading-relaxed font-serif text-base">{content}</p>
         </div>
       </div>
     );
@@ -113,12 +133,12 @@ export function MarkdownMessage({ role, content, isStreaming }: Props) {
 
   // Assistant
   return (
-    <div className="msg-enter px-3 py-1">
+    <div className="msg-enter px-4 py-2">
       <div
-        className="max-w-full rounded-2xl rounded-bl-sm px-4 py-3 text-sm"
+        className="max-w-full px-2 py-4 text-[15px]"
         style={{
-          background: "var(--bg-secondary)",
-          border: "1px solid var(--border-subtle)",
+          background: "transparent",
+          borderTop: "1px solid var(--border-subtle)",
         }}
       >
         <div className="prose-ide leading-relaxed">

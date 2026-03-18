@@ -7,10 +7,14 @@ import { PermissionRequestCard } from "../components/PermissionRequestCard";
 import { ReasoningBlock } from "../components/ReasoningBlock";
 import { TaskUpdateCard } from "../components/TaskUpdateCard";
 import { UserInputRequestCard } from "../components/UserInputRequestCard";
+import type { HistoryThreadSnapshot, HistoryThreadSummary } from "../lib/types";
 
 interface Props {
   items: ConversationItem[];
   turnActive: boolean;
+  historyThread?: HistoryThreadSummary | HistoryThreadSnapshot | null;
+  historyLoading?: boolean;
+  onContinueHistory?: () => void;
   onApprove?: (requestId: number) => void;
   onDeny?: (requestId: number) => void;
   onApprovePermission?: (requestId: number, scope: "turn" | "session") => void;
@@ -20,6 +24,9 @@ interface Props {
 export function TasksView({
   items,
   turnActive,
+  historyThread,
+  historyLoading,
+  onContinueHistory,
   onApprove,
   onDeny,
   onApprovePermission,
@@ -30,9 +37,9 @@ export function TasksView({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [items, turnActive]);
+  }, [historyLoading, historyThread, items, turnActive]);
 
-  if (items.length === 0 && !turnActive) {
+  if (items.length === 0 && !turnActive && !historyThread) {
     return (
       <div className="flex flex-col items-center justify-center h-full px-6">
         <div
@@ -50,6 +57,34 @@ export function TasksView({
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto py-3">
+      {historyThread && (
+        <div className="mx-4 mb-3 rounded-2xl border px-4 py-3" style={{ background: "var(--bg-secondary)", borderColor: "var(--border-default)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                {historyThread.title || "未命名线程"}
+              </div>
+              <div className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>
+                {historyLoading
+                  ? "正在尝试精确恢复这个历史线程..."
+                  : historyThread.state === "resumable"
+                    ? "这是本机 Codex 历史线程。若精确恢复失败，会自动回退到只读快照。"
+                    : historyThread.resumeReason || "这个历史线程当前只能以只读方式查看。"}
+              </div>
+            </div>
+            {onContinueHistory && (
+              <button
+                onClick={onContinueHistory}
+                className="shrink-0 px-3 py-2 rounded-xl text-xs font-semibold btn-press"
+                style={{ background: "var(--accent-cyan)", color: "var(--text-inverse)" }}
+              >
+                基于此继续
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {items.map((item) => {
         switch (item.type) {
           case "user_message":
@@ -138,6 +173,12 @@ export function TasksView({
         <div className="mx-3 my-2 flex items-center gap-2">
           <span className="spinner" />
           <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>Codex 正在处理...</span>
+        </div>
+      )}
+
+      {historyThread && items.length === 0 && !historyLoading && (
+        <div className="mx-4 mt-6 rounded-2xl border px-4 py-5 text-sm" style={{ background: "var(--bg-secondary)", borderColor: "var(--border-default)", color: "var(--text-tertiary)" }}>
+          这个历史线程没有可展示的完整快照，你仍然可以点击上方“基于此继续”在同一工作区开启一个新线程。
         </div>
       )}
     </div>

@@ -49,6 +49,106 @@ export interface StatusPayload {
   lastActivity: string;
 }
 
+export type HistoryThreadState = "resumable" | "snapshot_only" | "metadata_only";
+
+export type HistoryThreadItem =
+  | {
+      type: "user_message";
+      id: string;
+      text: string;
+      timestamp: number;
+    }
+  | {
+      type: "agent_text";
+      id: string;
+      content: string;
+      streaming: boolean;
+      timestamp: number;
+    }
+  | {
+      type: "reasoning";
+      id: string;
+      content: string;
+      summary: string;
+      streaming: boolean;
+      timestamp: number;
+    }
+  | {
+      type: "command_call";
+      id: string;
+      command: string;
+      cwd?: string;
+      status: "pending" | "approved" | "denied" | "running" | "completed" | "failed";
+      output: string;
+      exitCode: number | null;
+      durationMs: number | null;
+      timestamp: number;
+    }
+  | {
+      type: "file_change";
+      id: string;
+      changes: Array<{
+        path: string;
+        kind: "add" | "delete" | "update";
+        diff: string;
+      }>;
+      status: "pending" | "approved" | "denied" | "running" | "completed" | "failed";
+      timestamp: number;
+    }
+  | {
+      type: "task_update";
+      id: string;
+      explanation: string;
+      steps: Array<{
+        step: string;
+        status: "pending" | "inProgress" | "completed";
+      }>;
+      timestamp: number;
+    }
+  | {
+      type: "system";
+      id: string;
+      content: string;
+      timestamp: number;
+    };
+
+export interface HistoryThreadSummary {
+  id: string;
+  title: string;
+  preview: string;
+  workspace: string;
+  updatedAt: number;
+  state: HistoryThreadState;
+  hasSnapshot: boolean;
+  resumeReason?: string;
+}
+
+export interface HistoryThreadSnapshot extends HistoryThreadSummary {
+  items: HistoryThreadItem[];
+  meta: {
+    createdAt?: string;
+    source?: string;
+    originator?: string;
+    cliVersion?: string;
+    modelProvider?: string;
+  };
+}
+
+export interface HistoryWorkspaceSummary {
+  workspace: string;
+  title: string;
+  updatedAt: number;
+  threadCount: number;
+}
+
+export interface HistoryContinuePayload {
+  threadId: string;
+  title: string;
+  workspace: string;
+  state: HistoryThreadState;
+  prompt: string;
+}
+
 // ── WebSocket protocol ──
 
 export type ServerEvent =

@@ -13,10 +13,11 @@ export function TaskUpdateCard({ item }: Props) {
 
   return (
     <div
-      className="mx-3 my-2 rounded-xl overflow-hidden"
+      className="mx-4 my-4 py-1 overflow-hidden"
       style={{
-        background: "var(--bg-secondary)",
-        border: "1px solid var(--border-default)",
+        background: "transparent",
+        borderTop: "1px solid var(--border-subtle)",
+        borderBottom: "1px solid var(--border-subtle)",
       }}
     >
       {/* Header — clickable to collapse */}

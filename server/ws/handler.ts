@@ -3,11 +3,13 @@ import type { WebSocket } from "ws";
 import { validateWsToken } from "../auth.js";
 import { appServerManager } from "../app-server-manager.js";
 import type { ReviewDecision } from "../app-server-manager.js";
+import { codexHistoryService } from "../services/codex-history.js";
 
 // ── Client tracking ──
 
 interface ClientState {
-  sessionId: string | null;
+  activeSessionId: string | null;
+  subscribedSessionIds: Set<string>;
 }
 
 const clients = new Map<WebSocket, ClientState>();
@@ -27,8 +29,29 @@ function send(ws: WebSocket, msg: ServerMessage) {
 
 function broadcastToSession(sessionId: string, msg: ServerMessage) {
   for (const [ws, state] of clients) {
-    if (state.sessionId === sessionId) {
-      send(ws, msg);
+    if (state.subscribedSessionIds.has(sessionId)) {
+      send(ws, { sessionId, ...msg });
+    }
+  }
+}
+
+function getSessionId(ws: WebSocket, msg: Record<string, unknown>): string | null {
+  const state = clients.get(ws);
+  return ((msg.sessionId as string) || state?.activeSessionId || null);
+}
+
+function attachToSession(ws: WebSocket, sessionId: string) {
+  const state = clients.get(ws);
+  if (!state) return;
+  state.activeSessionId = sessionId;
+  state.subscribedSessionIds.add(sessionId);
+}
+
+function detachSessionEverywhere(sessionId: string) {
+  for (const state of clients.values()) {
+    state.subscribedSessionIds.delete(sessionId);
+    if (state.activeSessionId === sessionId) {
+      state.activeSessionId = null;
     }
   }
 }
@@ -129,6 +152,13 @@ export default async function wsHandler(app: FastifyInstance) {
           broadcastToSession(sessionId, {
             type: "thread_status_changed",
             status: p.status,
+          });
+          break;
+
+        case "thread/tokenUsage/updated":
+          broadcastToSession(sessionId, {
+            type: "token_usage",
+            tokenUsage: p.tokenUsage,
           });
           break;
 
@@ -264,6 +294,7 @@ export default async function wsHandler(app: FastifyInstance) {
       type: "session_closed",
       exitCode: code,
     });
+    detachSessionEverywhere(sessionId);
   });
 
   appServerManager.on("session_error", (sessionId: string, message: string) => {
@@ -286,7 +317,7 @@ export default async function wsHandler(app: FastifyInstance) {
       return;
     }
 
-    clients.set(ws, { sessionId: null });
+    clients.set(ws, { activeSessionId: null, subscribedSessionIds: new Set() });
 
     // Send existing sessions list
     send(ws, {
@@ -319,47 +350,52 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
 
     case "start_session": {
       const workspace = msg.workspace as string;
+      const clientRequestId = msg.clientRequestId as string | undefined;
+      const skipThreadStart = Boolean(msg.skipThreadStart);
       if (!workspace) {
-        send(ws, { type: "error", message: "workspace is required" });
+        send(ws, {
+          type: "session_start_failed",
+          clientRequestId,
+          workspace,
+          message: "workspace is required",
+        });
         return;
       }
 
+      let sessionId: string | null = null;
       try {
         // 1. Start the app-server process
         const session = appServerManager.start(workspace);
-        const state = clients.get(ws);
-        if (state) state.sessionId = session.id;
+        sessionId = session.id;
 
         // 2. Initialize the protocol
         await appServerManager.initialize(session.id);
 
-        // 3. Fetch persisted thread history and send to client
-        try {
-          const threads = await appServerManager.listThreads(session.id);
-          send(ws, { type: "threads_list", threads });
-        } catch {
-          // thread/list may fail on first run, that's ok
-        }
-
-        // 4. Start a new thread
         const model = msg.model as string | undefined;
         const approvalPolicy = (msg.approvalPolicy as string) || "on-request";
-        const thread = await appServerManager.startThread(session.id, {
-          model,
-          cwd: workspace,
-          approvalPolicy: approvalPolicy as "untrusted" | "on-failure" | "on-request" | "never",
-        });
+        let threadId: string | null = null;
 
+        if (!skipThreadStart) {
+          const thread = await appServerManager.startThread(session.id, {
+            model,
+            cwd: workspace,
+            approvalPolicy: approvalPolicy as "untrusted" | "on-failure" | "on-request" | "never",
+          });
+          threadId = thread.id;
+        }
+
+        attachToSession(ws, session.id);
         send(ws, {
           type: "session_started",
           sessionId: session.id,
-          threadId: thread.id,
+          threadId,
           workspace,
+          clientRequestId,
         });
 
-        // 5. If there's an initial prompt, send it as the first turn
+        // 4. If there's an initial prompt, send it as the first turn
         const prompt = msg.prompt as string | undefined;
-        if (prompt) {
+        if (prompt && threadId) {
           const effort = msg.reasoningEffort as string | undefined;
           await appServerManager.sendTurn(session.id, prompt, {
             model,
@@ -367,8 +403,13 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
           });
         }
       } catch (err) {
+        if (sessionId) {
+          appServerManager.kill(sessionId);
+        }
         send(ws, {
-          type: "error",
+          type: "session_start_failed",
+          clientRequestId,
+          workspace,
           message: `Failed to start session: ${err instanceof Error ? err.message : err}`,
         });
       }
@@ -376,8 +417,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "send_message": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       const text = msg.text as string;
 
       if (!sessionId || !text) {
@@ -404,8 +444,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "approve": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       const requestId = msg.requestId as number;
 
       if (!sessionId || requestId === undefined) {
@@ -419,8 +458,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "deny": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       const requestId = msg.requestId as number;
 
       if (!sessionId || requestId === undefined) {
@@ -433,8 +471,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "grant_permissions": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       const requestId = msg.requestId as number;
       const scope = (msg.scope as "turn" | "session") || "turn";
 
@@ -448,8 +485,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "submit_user_input": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       const requestId = msg.requestId as number;
       const answers = (msg.answers as Record<string, string[]>) || {};
 
@@ -463,8 +499,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "reject_request": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       const requestId = msg.requestId as number;
       const message = (msg.message as string) || "Request denied by user";
 
@@ -478,8 +513,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "interrupt": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       if (sessionId) {
         await appServerManager.interruptTurn(sessionId);
       }
@@ -487,11 +521,11 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     }
 
     case "kill_session": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       if (sessionId) {
         appServerManager.kill(sessionId);
-        send(ws, { type: "session_killed", sessionId });
+        broadcastToSession(sessionId, { type: "session_killed" });
+        detachSessionEverywhere(sessionId);
       }
       break;
     }
@@ -499,8 +533,7 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
     case "attach_session": {
       const sessionId = msg.sessionId as string;
       if (sessionId && appServerManager.get(sessionId)) {
-        const state = clients.get(ws);
-        if (state) state.sessionId = sessionId;
+        attachToSession(ws, sessionId);
         send(ws, {
           type: "attached",
           sessionId,
@@ -516,25 +549,181 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
       });
       break;
 
-    case "list_threads": {
+    case "compact_thread": {
       const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = (msg.sessionId as string) || state?.activeSessionId;
+      if (!sessionId) break;
+      const session = appServerManager.get(sessionId);
+      if (session?.threadId) {
+        try {
+          await (appServerManager as any).sendRequest(
+            session, "thread/compact/start", { threadId: session.threadId }
+          );
+          send(ws, { type: "notification", method: "compact", params: { message: "上下文已压缩" } });
+        } catch (err) {
+          send(ws, { type: "error", message: `压缩失败: ${err instanceof Error ? err.message : err}` });
+        }
+      }
+      break;
+    }
+
+    case "rollback_thread": {
+      const state = clients.get(ws);
+      const sessionId = (msg.sessionId as string) || state?.activeSessionId;
+      if (!sessionId) break;
+      const session = appServerManager.get(sessionId);
+      if (session?.threadId) {
+        try {
+          await (appServerManager as any).sendRequest(
+            session, "thread/rollback", { threadId: session.threadId }
+          );
+          send(ws, { type: "notification", method: "rollback", params: { message: "已撤销上一轮" } });
+        } catch (err) {
+          send(ws, { type: "error", message: `撤销失败: ${err instanceof Error ? err.message : err}` });
+        }
+      }
+      break;
+    }
+
+    case "review_start": {
+      const state = clients.get(ws);
+      const sessionId = (msg.sessionId as string) || state?.activeSessionId;
+      if (!sessionId) break;
+      try {
+        await (appServerManager as any).sendRequest(
+          appServerManager.get(sessionId), "review/start", { threadId: appServerManager.get(sessionId)?.threadId }
+        );
+      } catch (err) {
+        send(ws, { type: "error", message: `代码审查失败: ${err instanceof Error ? err.message : err}` });
+      }
+      break;
+    }
+
+    case "fork_thread": {
+      const state = clients.get(ws);
+      const sessionId = (msg.sessionId as string) || state?.activeSessionId;
+      if (!sessionId) break;
+      const session = appServerManager.get(sessionId);
+      if (!session?.threadId) break;
+      try {
+        const result = await (appServerManager as any).sendRequest(
+          session, "thread/fork", { threadId: session.threadId }
+        );
+        const thread = (result as any)?.thread;
+        if (thread) {
+          session.threadId = thread.id;
+          send(ws, { type: "session_started", sessionId, threadId: thread.id, workspace: session.workspace });
+        }
+      } catch (err) {
+        send(ws, { type: "error", message: `分叉失败: ${err instanceof Error ? err.message : err}` });
+      }
+      break;
+    }
+
+    case "set_thread_name": {
+      const state = clients.get(ws);
+      const sessionId = (msg.sessionId as string) || state?.activeSessionId;
+      const name = msg.name as string;
+      if (!sessionId || !name) break;
+      const session = appServerManager.get(sessionId);
+      if (!session?.threadId) break;
+      try {
+        await (appServerManager as any).sendRequest(
+          session, "thread/name/set", { threadId: session.threadId, name }
+        );
+        send(ws, { type: "notification", method: "name_set", params: { name } });
+      } catch (err) {
+        send(ws, { type: "error", message: `命名失败: ${err instanceof Error ? err.message : err}` });
+      }
+      break;
+    }
+
+    case "new_thread": {
+      const sessionId = getSessionId(ws, msg);
+      const workspace = msg.workspace as string;
+      const approvalPolicy = (msg.approvalPolicy as string) || "on-request";
+      const prompt = msg.prompt as string | undefined;
+      const model = msg.model as string | undefined;
+      const effort = msg.reasoningEffort as string | undefined;
+
+      if (!sessionId) {
+        send(ws, { type: "error", message: "No active session" });
+        return;
+      }
+
+      try {
+        const thread = await appServerManager.startThread(sessionId, {
+          model,
+          cwd: workspace || undefined,
+          approvalPolicy: approvalPolicy as "untrusted" | "on-failure" | "on-request" | "never",
+        });
+        send(ws, {
+          type: "session_started",
+          sessionId,
+          threadId: thread.id,
+          workspace: workspace || "",
+        });
+
+        if (prompt) {
+          try {
+            await appServerManager.sendTurn(sessionId, prompt, {
+              model,
+              effort: effort as "low" | "medium" | "high" | "xhigh" | undefined,
+            });
+          } catch (err) {
+            send(ws, {
+              type: "error",
+              sessionId,
+              message: `Failed to send initial prompt: ${err instanceof Error ? err.message : err}`,
+            });
+          }
+        }
+      } catch (err) {
+        send(ws, {
+          type: "error",
+          sessionId,
+          message: `Failed to create thread: ${err instanceof Error ? err.message : err}`,
+        });
+      }
+      break;
+    }
+
+    case "list_skills": {
+      const sessionId = getSessionId(ws, msg);
+      if (!sessionId) {
+        send(ws, { type: "error", message: "No active session" });
+        return;
+      }
+      try {
+        const result = await appServerManager.listSkills(sessionId);
+        send(ws, { type: "skills_list", sessionId, data: result });
+      } catch (err) {
+        send(ws, { type: "skills_list", sessionId, data: { data: [] } });
+      }
+      break;
+    }
+
+    case "list_threads": {
+      const sessionId = getSessionId(ws, msg);
       if (!sessionId) {
         send(ws, { type: "error", message: "No active session. Start a session first." });
         return;
       }
       try {
         const threads = await appServerManager.listThreads(sessionId);
-        send(ws, { type: "threads_list", threads });
+        send(ws, { type: "threads_list", sessionId, threads });
       } catch (err) {
-        send(ws, { type: "error", message: `Failed to list threads: ${err instanceof Error ? err.message : err}` });
+        send(ws, {
+          type: "error",
+          sessionId,
+          message: `Failed to list threads: ${err instanceof Error ? err.message : err}`,
+        });
       }
       break;
     }
 
     case "resume_thread": {
-      const state = clients.get(ws);
-      const sessionId = (msg.sessionId as string) || state?.sessionId;
+      const sessionId = getSessionId(ws, msg);
       const threadId = msg.threadId as string;
 
       if (!sessionId || !threadId) {
@@ -546,10 +735,29 @@ async function handleMessage(ws: WebSocket, msg: Record<string, unknown>) {
         const thread = await appServerManager.resumeThread(sessionId, threadId);
         send(ws, {
           type: "thread_resumed",
+          sessionId,
           thread,
         });
       } catch (err) {
-        send(ws, { type: "error", message: `Failed to resume thread: ${err instanceof Error ? err.message : err}` });
+        const message = `Failed to resume thread: ${err instanceof Error ? err.message : err}`;
+
+        if (message.includes("no rollout found")) {
+          const degradedThread = codexHistoryService.markResumeFailure(threadId, message);
+          send(ws, {
+            type: "thread_resume_unavailable",
+            sessionId,
+            threadId,
+            thread: degradedThread,
+            message,
+          });
+          return;
+        }
+
+        send(ws, {
+          type: "error",
+          sessionId,
+          message,
+        });
       }
       break;
     }
