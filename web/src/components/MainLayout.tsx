@@ -47,7 +47,7 @@ export function MainLayout({ leftDrawer, rightDrawer, children }: Props) {
     <div className="relative h-full overflow-hidden flex" style={{ background: "var(--bg-root)" }}>
       {/* Tablet: persistent left sidebar */}
       <aside
-        className="hidden lg:flex flex-col w-[280px] shrink-0"
+        className="hidden lg:flex flex-col w-[320px] shrink-0"
         style={{ background: "var(--bg-primary)" }}
       >
         {leftDrawer}
